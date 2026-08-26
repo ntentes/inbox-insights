@@ -1,0 +1,29 @@
+# roborev snapshots
+/.roborev/
+
+# local configuration and secrets -- never commit these
+/config.R
+.Renviron
+.Rhistory
+.RData
+.Rproj.user/
+
+# renv: the lockfile is committed, the library is restored from it
+/renv/library/
+/renv/local/
+/renv/sandbox/
+/renv/staging/
+
+# everything below is rebuilt by prep/build_all.R from the seeded generator
+/data/
+/board/
+/artifacts/*
+!/artifacts/.gitkeep
+
+# quarto render output
+/.quarto/
+/inbox-insights.html
+/inbox-insights_files/
+
+# macOS
+.DS_Store
