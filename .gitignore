@@ -8,11 +8,8 @@
 .RData
 .Rproj.user/
 
-# renv: the lockfile is committed, the library is restored from it
-/renv/library/
-/renv/local/
-/renv/sandbox/
-/renv/staging/
+# renv: the lockfile is committed and the library is restored from it. The
+# library/staging paths are ignored by renv/.gitignore, which renv maintains.
 
 # everything below is rebuilt by prep/build_all.R from the seeded generator
 /data/
