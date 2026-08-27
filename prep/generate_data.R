@@ -94,6 +94,24 @@ gen_deal_value_size <- c(
   Enterprise = 7.50
 )
 
+# --- Campaigns --------------------------------------------------------------
+# One lead can be touched by several campaigns, and the source system records
+# them as a single comma-separated string. Splitting that column before grouping
+# gives one row per lead-campaign pair, so any count or conversion denominator
+# computed afterwards is inflated -- a lead touched by three campaigns is
+# counted three times. Populated at entry, so it is never blank.
+gen_campaign_pool <- c(
+  "Spring Freight Webinar",
+  "Cold Chain Guide",
+  "Rate Card Promo",
+  "Last-Mile Newsletter",
+  "Warehouse Automation Ebook",
+  "Regional Roadshow",
+  "Customer Referral Push",
+  "Fleet Efficiency Report"
+)
+gen_campaign_count_p <- c(`1` = 0.35, `2` = 0.35, `3` = 0.22, `4` = 0.08)
+
 # --- Progression ------------------------------------------------------------
 # Three sequential gates, each a logistic function of channel, company size, and
 # a per-lead quality term shared across all three gates. Eventual entry-to-won
@@ -280,6 +298,25 @@ add_late_attributes <- function(leads) {
     )
 }
 
+# The multi-value column: a comma-separated list of the campaigns that touched
+# each lead. Names are sorted so the string is canonical rather than carrying the
+# draw order, which makes the column diffable and the regeneration test honest.
+add_campaigns <- function(leads) {
+  n <- nrow(leads)
+  counts <- as.integer(sample(
+    names(gen_campaign_count_p),
+    n,
+    replace = TRUE,
+    prob = gen_campaign_count_p
+  ))
+  campaigns <- vapply(
+    counts,
+    function(k) paste(sort(sample(gen_campaign_pool, k)), collapse = ", "),
+    character(1)
+  )
+  mutate(leads, campaigns = .env$campaigns)
+}
+
 generate_funnel_raw <- function(seed = INBOX_SEED) {
   set.seed(
     seed,
@@ -288,7 +325,8 @@ generate_funnel_raw <- function(seed = INBOX_SEED) {
     sample.kind = "Rejection"
   )
   generate_leads() |>
-    add_late_attributes()
+    add_late_attributes() |>
+    add_campaigns()
 }
 
 if (sys.nframe() == 0L) {
