@@ -15,6 +15,7 @@
 library(dplyr)
 
 source(here::here("prep", "generate_data.R"))
+source(here::here("R", "snapshot.R"))
 
 # --- Cleaning ---------------------------------------------------------------
 
@@ -174,7 +175,7 @@ COHORT_COLUMNS <- c(
 # column, which any stray select() can arrange.
 SNAPSHOT_COLUMNS <- c(
   setdiff(COHORT_COLUMNS, COHORT_HINDSIGHT_COLUMNS),
-  "snapshot_as_of"
+  SNAPSHOT_CUTOFF_COLUMN
 )
 
 # --- The cohort table -------------------------------------------------------
@@ -252,18 +253,16 @@ funnel_snapshot <- function(funnel_cohort, as_of = INBOX_AS_OF) {
   # Snapshots reconstruct backwards, never forwards. Censoring throws information
   # away, so asking a January table for a June view returns whatever survived
   # January -- fewer leads, fewer wins, and nothing in the result to say so.
-  if ("snapshot_as_of" %in% names(funnel_cohort)) {
-    source_as_of <- max(funnel_cohort$snapshot_as_of)
-    if (as_of > source_as_of) {
-      stop(
-        "Cannot take a ", as_of, " snapshot of a table already censored at ",
-        source_as_of, ".\n",
-        "  Everything after ", source_as_of, " has been discarded, so the result\n",
-        "  would be a ", source_as_of, " view wearing a later date.\n",
-        "  Start again from the cohort table.",
-        call. = FALSE
-      )
-    }
+  source_as_of <- snapshot_cutoff(funnel_cohort)
+  if (!is.null(source_as_of) && as_of > source_as_of) {
+    stop(
+      "Cannot take a ", as_of, " snapshot of a table already censored at ",
+      source_as_of, ".\n",
+      "  Everything after ", source_as_of, " has been discarded, so the result\n",
+      "  would be a ", source_as_of, " view wearing a later date.\n",
+      "  Start again from the cohort table.",
+      call. = FALSE
+    )
   }
 
   funnel_cohort |>
@@ -272,7 +271,7 @@ funnel_snapshot <- function(funnel_cohort, as_of = INBOX_AS_OF) {
     censor_unobservable(as_of) |>
     backfill_skipped_checkpoints() |>
     derive_cohort_fields(as_of) |>
-    mutate(snapshot_as_of = as_of) |>
+    stamp_snapshot_cutoff(as_of) |>
     select(all_of(SNAPSHOT_COLUMNS)) |>
     arrange(lead_id)
 }

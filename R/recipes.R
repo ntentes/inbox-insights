@@ -17,6 +17,9 @@
 
 library(dplyr)
 
+# require_snapshot() and the cutoff contract it enforces.
+source(here::here("R", "snapshot.R"))
+
 # Grouping by one of these silently changes the question. The late_ columns are
 # only populated for leads that got far enough down the funnel, so grouping a
 # full-funnel denominator by one of them quietly restricts the denominator to
@@ -53,37 +56,6 @@ check_grouping <- function(cohort, by) {
 # dates at face value mixes a censored outcome with uncensored progression: the
 # won count is what was known in June and the qualified count includes leads that
 # qualified in August. That is not a snapshot and not hindsight, it is neither.
-
-# Column presence is not proof of censoring. Dropping won_eventually from the
-# cohort -- a single select() away -- would satisfy a guard that only checks the
-# column is absent, while every stage date still ran past the as-of date. So the
-# snapshot records its own cutoff and this checks the data against it rather than
-# trusting the shape of the table.
-require_snapshot <- function(cohort) {
-  if (!"snapshot_as_of" %in% names(cohort)) {
-    stop(
-      "This metric needs a snapshot.\n",
-      "  Pass funnel_snapshot(cohort): it censors every stage date at the as-of\n",
-      "  date and records that date in a snapshot_as_of column.\n",
-      "  For hindsight over the full cohort, ask for basis = \"eventual\".",
-      call. = FALSE
-    )
-  }
-
-  as_of <- max(cohort$snapshot_as_of)
-  stage_dates <- c("qualified_date", "opportunity_date", "won_date", "lost_date")
-  latest <- suppressWarnings(max(
-    vapply(cohort[stage_dates], function(x) max(as.numeric(x), na.rm = TRUE), numeric(1))
-  ))
-  if (is.finite(latest) && latest > as.numeric(as_of)) {
-    stop(
-      "This table says it was censored at ", as_of, " but carries stage dates\n",
-      "  after that. Something has reassembled it from more than one cutoff.",
-      call. = FALSE
-    )
-  }
-  invisible(TRUE)
-}
 
 outcome_column <- function(cohort, basis) {
   has_hindsight <- "won_eventually" %in% names(cohort)
