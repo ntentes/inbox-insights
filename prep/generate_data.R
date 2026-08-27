@@ -154,6 +154,20 @@ gen_channel_delay <- c(
   Partner = 0.72
 )
 
+# --- Skipped checkpoints ----------------------------------------------------
+# A small fraction of records show up at a late stage with no date on an earlier
+# one. Nothing sinister: somebody moved a deal forward in the CRM without filling
+# in the step it passed through. The lead did reach the stage, so the attribute
+# captured there is still recorded -- only the timestamp is missing.
+#
+# This is the subtlest trap of the four. A pipeline has to backfill the missing
+# date to keep the stage sequence usable, but a backfilled date is a guess, so
+# any time-in-stage metric computed from it is fiction. That is what makes the
+# use_for_time_* eligibility flags in the cohort table load-bearing rather than
+# decorative.
+gen_skip_qualified <- 0.030
+gen_skip_opportunity <- 0.015
+
 # Leads that fail a gate are marked lost some time after the last stage they did
 # reach.
 gen_lost_median <- 21
@@ -317,6 +331,30 @@ add_campaigns <- function(leads) {
   mutate(leads, campaigns = .env$campaigns)
 }
 
+# Blank an intermediate stage date on a small fraction of records that reached a
+# later stage. Only records with the later date are eligible, so this drops a
+# timestamp without ever changing how far a lead actually got -- conversion
+# counts are untouched.
+add_skipped_checkpoints <- function(leads) {
+  n <- nrow(leads)
+  skip_qualified <- stats::runif(n) < gen_skip_qualified
+  skip_opportunity <- stats::runif(n) < gen_skip_opportunity
+
+  leads |>
+    mutate(
+      qualified_date = if_else(
+        .env$skip_qualified & !is.na(opportunity_date),
+        as.Date(NA),
+        qualified_date
+      ),
+      opportunity_date = if_else(
+        .env$skip_opportunity & !is.na(won_date),
+        as.Date(NA),
+        opportunity_date
+      )
+    )
+}
+
 generate_funnel_raw <- function(seed = INBOX_SEED) {
   set.seed(
     seed,
@@ -324,9 +362,14 @@ generate_funnel_raw <- function(seed = INBOX_SEED) {
     normal.kind = "Inversion",
     sample.kind = "Rejection"
   )
+  # Order matters: the skipped checkpoints are applied last, after the late
+  # attributes have been assigned from the intact stage dates. A lead whose
+  # qualification date went missing still qualified, so it still has an
+  # industry -- which is exactly the inconsistency the pipeline has to notice.
   generate_leads() |>
     add_late_attributes() |>
-    add_campaigns()
+    add_campaigns() |>
+    add_skipped_checkpoints()
 }
 
 if (sys.nframe() == 0L) {
