@@ -50,16 +50,24 @@ check_grouping <- function(cohort, by) {
 # Entry-to-won conversion. The denominator is leads that entered, always, because
 # that is the only denominator every lead qualifies for.
 #
-# min_observation_age_days is the important argument. Restricting to leads that
-# have had at least that long to convert is what makes two cohorts comparable: a
-# cohort three weeks old has not failed to convert, it has not finished yet.
+# within_days is the argument that matters, and it does two things at once
+# on purpose. It drops leads that have not yet had that long to convert, and it
+# stops counting wins that arrived later than that. Both halves are necessary. Do
+# only the first and an eighteen-month-old cohort still gets eighteen months of
+# wins while a four-month-old cohort gets four, so the series slopes downward with
+# recency and the trap is intact. Measuring every cohort over the same window
+# from entry is the only comparison that answers the question people think they
+# are asking.
+#
+# Leave it NULL and you get the raw snapshot rate: correct as a statement about
+# what has happened so far, and not comparable across cohorts of different ages.
 #
 # basis = "eventual" uses hindsight and is for the explanatory chart and the tests
 # only. It is never available on a snapshot, because funnel_snapshot() drops the
 # column it needs.
 conversion_by <- function(cohort,
                           by = NULL,
-                          min_observation_age_days = NULL,
+                          within_days = NULL,
                           basis = c("as_of", "eventual")) {
   basis <- match.arg(basis)
   check_grouping(cohort, by)
@@ -83,25 +91,30 @@ conversion_by <- function(cohort,
   # on almost no data, and the reader has no way to notice.
   eligible <- mutate(cohort, .group_leads = n(), .by = all_of(by))
 
-  if (!is.null(min_observation_age_days)) {
-    eligible <- filter(
-      eligible,
-      observation_age_days >= min_observation_age_days
-    )
+  if (is.null(within_days)) {
+    eligible <- mutate(eligible, .won = .data[[outcome]])
+  } else {
+    eligible <- eligible |>
+      filter(observation_age_days >= within_days) |>
+      mutate(
+        .won = .data[[outcome]] &
+          !is.na(days_to_won) &
+          days_to_won <= within_days
+      )
   }
 
   result <- eligible |>
     summarise(
       leads = n(),
-      won = sum(.data[[outcome]]),
-      conversion = mean(.data[[outcome]]),
-      min_observation_age_days = min(observation_age_days),
+      won = sum(.won),
+      conversion = mean(.won),
+      youngest_lead_days = min(observation_age_days),
       share_of_group_observed = leads / max(.group_leads),
       .by = all_of(by)
     ) |>
     arrange(across(all_of(by)))
 
-  if (is.null(min_observation_age_days)) {
+  if (is.null(within_days)) {
     result <- select(result, -share_of_group_observed)
   }
   result
@@ -114,7 +127,7 @@ conversion_by <- function(cohort,
 # invites exactly the comparison this whole exercise is about avoiding.
 cohort_conversion <- function(cohort,
                               complete_months_only = TRUE,
-                              min_observation_age_days = NULL,
+                              within_days = NULL,
                               basis = c("as_of", "eventual"),
                               as_of = INBOX_AS_OF) {
   if (complete_months_only) {
@@ -124,7 +137,7 @@ cohort_conversion <- function(cohort,
   conversion_by(
     cohort,
     by = "cohort_month",
-    min_observation_age_days = min_observation_age_days,
+    within_days = within_days,
     basis = basis
   )
 }
