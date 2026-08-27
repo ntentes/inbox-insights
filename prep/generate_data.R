@@ -407,24 +407,43 @@ add_skipped_checkpoints <- function(leads) {
 
 # Break a few records on purpose. Called last, so nothing downstream in the
 # generator can quietly repair the damage.
-add_data_entry_anomalies <- function(leads) {
+# Which rows the anomalies land on.
+#
+# Exported rather than kept inside the injector so the validator can check
+# identity instead of counting. Counting alone is fooled by substitution: repair
+# one configured anomaly, accidentally break a different row the same way, and
+# the totals are unchanged.
+#
+# The selection is stable before and after injection -- nothing here changes
+# which dates are missing, only what they contain -- so calling it on the
+# finished table returns the same rows it was applied to.
+anomaly_rows <- function(leads) {
   qualified_rows <- which(!is.na(leads$qualified_date))
   full_path_rows <- which(!is.na(leads$opportunity_date) & !is.na(leads$won_date))
 
+  list(
+    negative_lag = qualified_rows[gen_anomaly_negative_lag],
+    bad_ordering = full_path_rows[gen_anomaly_bad_ordering],
+    duplicate_from = full_path_rows[gen_anomaly_duplicate_id[["from"]]],
+    duplicate_to = full_path_rows[gen_anomaly_duplicate_id[["to"]]]
+  )
+}
+
+add_data_entry_anomalies <- function(leads) {
+  rows <- anomaly_rows(leads)
+
   # A qualification date before the lead ever arrived, which yields a negative
   # time in stage. Real CRMs produce these through manual backdating.
-  negative_lag <- qualified_rows[gen_anomaly_negative_lag]
-  leads$qualified_date[negative_lag] <-
-    leads$entered_date[negative_lag] - c(3, 11)
+  leads$qualified_date[rows$negative_lag] <-
+    leads$entered_date[rows$negative_lag] - c(3, 11)
 
   # A deal recorded as won before it became an opportunity.
-  bad_ordering <- full_path_rows[gen_anomaly_bad_ordering]
-  leads$won_date[bad_ordering] <- leads$opportunity_date[bad_ordering] - 2
+  leads$won_date[rows$bad_ordering] <-
+    leads$opportunity_date[rows$bad_ordering] - 2
 
   # The same lead id on two different rows, so anything that assumes lead_id is
   # a key will silently double-count or silently drop one of them.
-  leads$lead_id[full_path_rows[gen_anomaly_duplicate_id[["to"]]]] <-
-    leads$lead_id[full_path_rows[gen_anomaly_duplicate_id[["from"]]]]
+  leads$lead_id[rows$duplicate_to] <- leads$lead_id[rows$duplicate_from]
 
   leads
 }
