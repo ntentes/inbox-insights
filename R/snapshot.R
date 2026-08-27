@@ -32,7 +32,22 @@ snapshot_cutoff <- function(leads) {
     return(NULL)
   }
 
+  meta <- attr(leads, SNAPSHOT_CUTOFF_COLUMN, exact = TRUE)
   recorded <- unique(leads[[SNAPSHOT_CUTOFF_COLUMN]])
+
+  # No rows, so the column has nowhere to keep anything and the attribute is the
+  # only witness left.
+  if (nrow(leads) == 0) {
+    if (is.null(meta)) {
+      stop(
+        "This empty table has a ", SNAPSHOT_CUTOFF_COLUMN, " column but no\n",
+        "  record of the cutoff it was built at. Rebuild it with funnel_snapshot().",
+        call. = FALSE
+      )
+    }
+    return(meta)
+  }
+
   if (length(recorded) > 1) {
     stop(
       "This table carries ", length(recorded), " different snapshot cutoffs: ",
@@ -43,19 +58,33 @@ snapshot_cutoff <- function(leads) {
       call. = FALSE
     )
   }
-  if (length(recorded) == 1 && !is.na(recorded)) {
-    return(recorded)
-  }
-
-  meta <- attr(leads, SNAPSHOT_CUTOFF_COLUMN, exact = TRUE)
-  if (is.null(meta)) {
+  if (anyNA(recorded)) {
     stop(
-      "This table has a ", SNAPSHOT_CUTOFF_COLUMN, " column with no usable\n",
-      "  cutoff in it. Rebuild it with funnel_snapshot().",
+      "This table has rows but no cutoff recorded against them.\n",
+      "  Rebuild it with funnel_snapshot().",
       call. = FALSE
     )
   }
-  meta
+
+  # The two carriers have to agree. Rewriting the column uniformly -- January to
+  # June, say -- leaves the attribute behind saying January, and without this
+  # comparison the relabelled table would be accepted as June and reconstructed
+  # from data that stops in January.
+  #
+  # A limitation worth being honest about: an operation that drops attributes,
+  # such as a join or as.data.frame(), leaves the column as the only witness, so
+  # this raises the cost of an accident rather than defeating a determined
+  # forgery. The mixed-cutoff and date-range checks are the ones that hold in
+  # every case.
+  if (!is.null(meta) && !identical(as.Date(meta), as.Date(recorded))) {
+    stop(
+      "This table's cutoff column says ", recorded, ", but the table was built\n",
+      "  at ", meta, ". One of the two has been edited since.\n",
+      "  Rebuild from the cohort table.",
+      call. = FALSE
+    )
+  }
+  recorded
 }
 
 # Record the cutoff on both carriers at once, so they cannot drift apart.
@@ -83,9 +112,23 @@ require_snapshot <- function(leads) {
     )
   }
 
-  present <- intersect(SNAPSHOT_CENSORED_DATES, names(leads))
+  # Every censored date has to be present, not merely every censored date that
+  # happens to still be there. Skipping the absent ones means dropping a column
+  # is enough to hide what it would have revealed -- remove entered_date and a
+  # row appended for a lead that had not arrived yet becomes invisible while
+  # still counting towards every denominator.
+  missing_dates <- setdiff(SNAPSHOT_CENSORED_DATES, names(leads))
+  if (length(missing_dates) > 0) {
+    stop(
+      "This table is missing ", paste(missing_dates, collapse = ", "), ".\n",
+      "  A snapshot's cutoff can only be verified against the dates it censors,\n",
+      "  so all of them have to be present.",
+      call. = FALSE
+    )
+  }
+
   offenders <- vapply(
-    leads[present],
+    leads[SNAPSHOT_CENSORED_DATES],
     function(x) any(!is.na(x) & x > as_of),
     logical(1)
   )
