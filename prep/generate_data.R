@@ -43,6 +43,8 @@ gen_last_entry <- INBOX_AS_OF
 # because the seed was picked to flatter it.
 gen_daily_base <- 42.3
 gen_annual_growth <- 1.6
+# The order is load-bearing, not decorative: these are looked up by position,
+# Sunday first, to match POSIXlt's day-of-week numbering.
 gen_weekday_factor <- c(
   Sunday = 0.30,
   Monday = 1.18,
@@ -217,10 +219,15 @@ rlnorm_median <- function(n, median, sdlog) {
 generate_arrivals <- function() {
   dates <- seq(gen_first_entry, gen_last_entry, by = "day")
   elapsed_years <- as.numeric(dates - gen_first_entry) / 365
-  weekday <- weekdays(dates)
+  # Indexed by position rather than by name. weekdays() is the obvious call and
+  # is a portability bug: it returns localised day names, so under a non-English
+  # LC_TIME every lookup misses, lambda becomes NA, and generation dies inside
+  # rpois() with a message about an invalid 'times' argument. POSIXlt numbers the
+  # days from 0 for Sunday, which is the order gen_weekday_factor is written in.
+  weekday <- as.POSIXlt(dates)$wday + 1L
   lambda <- gen_daily_base *
     gen_annual_growth^elapsed_years *
-    gen_weekday_factor[weekday]
+    unname(gen_weekday_factor[weekday])
   rep(dates, times = stats::rpois(length(dates), lambda))
 }
 
