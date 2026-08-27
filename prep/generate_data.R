@@ -410,11 +410,49 @@ generate_funnel_raw <- function(seed = INBOX_SEED) {
     add_data_entry_anomalies()
 }
 
+# --- Serialisation ----------------------------------------------------------
+# The CSV is gitignored: it is rebuilt from the seed rather than tracked. These
+# helpers exist so that every reader agrees on the column types, because guessed
+# types are a slow way to introduce a difference between two runs.
+
+inbox_funnel_raw_path <- function() inbox_data_path("funnel_raw.csv")
+
+funnel_raw_col_types <- function() {
+  readr::cols(
+    lead_id = readr::col_character(),
+    entered_date = readr::col_date(),
+    qualified_date = readr::col_date(),
+    opportunity_date = readr::col_date(),
+    won_date = readr::col_date(),
+    lost_date = readr::col_date(),
+    channel = readr::col_character(),
+    company_size = readr::col_character(),
+    region = readr::col_character(),
+    industry = readr::col_character(),
+    deal_value = readr::col_double(),
+    competitor = readr::col_character(),
+    campaigns = readr::col_character()
+  )
+}
+
+write_funnel_raw <- function(funnel_raw, path = inbox_funnel_raw_path()) {
+  dir.create(dirname(path), showWarnings = FALSE, recursive = TRUE)
+  readr::write_csv(funnel_raw, path, na = "")
+  invisible(path)
+}
+
+read_funnel_raw <- function(path = inbox_funnel_raw_path()) {
+  if (!file.exists(path)) {
+    stop(
+      "No generated funnel table at ", path, ".\n",
+      "Run prep/generate_data.R first, or prep/build_all.R for everything."
+    )
+  }
+  readr::read_csv(path, col_types = funnel_raw_col_types(), progress = FALSE)
+}
+
 if (sys.nframe() == 0L) {
   funnel_raw <- generate_funnel_raw()
-  dir.create(inbox_data_path(), showWarnings = FALSE, recursive = TRUE)
-  readr::write_csv(funnel_raw, inbox_data_path("funnel_raw.csv"), na = "")
-  message(
-    "Wrote ", nrow(funnel_raw), " leads to ", inbox_data_path("funnel_raw.csv")
-  )
+  path <- write_funnel_raw(funnel_raw)
+  message("Wrote ", nrow(funnel_raw), " leads to ", path)
 }
