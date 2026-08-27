@@ -45,6 +45,47 @@ check_grouping <- function(cohort, by) {
   )
 }
 
+# Pick the outcome column, and refuse the combination that quietly produces a
+# funnel nobody ever observed.
+#
+# A table carrying won_eventually is the full cohort, which means its stage dates
+# run past the as-of date too. Reading won_as_of off it while reading the stage
+# dates at face value mixes a censored outcome with uncensored progression: the
+# won count is what was known in June and the qualified count includes leads that
+# qualified in August. That is not a snapshot and not hindsight, it is neither.
+outcome_column <- function(cohort, basis) {
+  has_hindsight <- "won_eventually" %in% names(cohort)
+
+  if (basis == "eventual") {
+    if (!has_hindsight) {
+      stop(
+        "basis = \"eventual\" needs the full cohort table, which has a\n",
+        "  won_eventually column. A snapshot has it removed on purpose, because\n",
+        "  the agent must never see outcomes from after the as-of date.",
+        call. = FALSE
+      )
+    }
+    return("won_eventually")
+  }
+
+  if (has_hindsight) {
+    stop(
+      "basis = \"as_of\" needs a snapshot, and this table still carries\n",
+      "  won_eventually -- so its stage dates have not been censored either.\n",
+      "  Counting censored outcomes against uncensored stage dates describes a\n",
+      "  funnel that existed at no point in time.\n",
+      "  Pass funnel_snapshot(cohort), or ask for basis = \"eventual\".",
+      call. = FALSE
+    )
+  }
+  if (!"won_as_of" %in% names(cohort)) {
+    stop("This table has no won_as_of column. Was it built by build_funnel_cohort()?",
+      call. = FALSE
+    )
+  }
+  "won_as_of"
+}
+
 # --- Conversion -------------------------------------------------------------
 
 # Entry-to-won conversion. The denominator is leads that entered, always, because
@@ -71,19 +112,7 @@ conversion_by <- function(cohort,
                           basis = c("as_of", "eventual")) {
   basis <- match.arg(basis)
   check_grouping(cohort, by)
-
-  outcome <- if (basis == "as_of") "won_as_of" else "won_eventually"
-  if (!outcome %in% names(cohort)) {
-    stop(
-      "This table has no ", outcome, " column. ",
-      if (basis == "eventual") {
-        "basis = \"eventual\" needs the full cohort table; a snapshot has the\n  hindsight column removed on purpose."
-      } else {
-        "Was it built by build_funnel_cohort()?"
-      },
-      call. = FALSE
-    )
-  }
+  outcome <- outcome_column(cohort, basis)
 
   # Group sizes are recorded before the age filter, so the result can report how
   # much of each group survived it. Without that, a young cohort trimmed down to
@@ -176,15 +205,21 @@ median_days_to <- function(cohort, stage = c("won", "opportunity", "qualified"),
 
 # How many leads had reached each stage at the snapshot. Long rather than wide,
 # because the next thing anyone does with this is plot it.
-stage_funnel <- function(cohort, by = NULL) {
+stage_funnel <- function(cohort, by = NULL, basis = c("as_of", "eventual")) {
+  basis <- match.arg(basis)
   check_grouping(cohort, by)
+  # Every stage in the result has to come from the same table, so the guard here
+  # is doing more work than picking a column name: it rejects the full cohort
+  # under basis = "as_of", where the stage dates and the outcome disagree about
+  # what date it is.
+  outcome <- outcome_column(cohort, basis)
 
   cohort |>
     summarise(
       entered = n(),
       qualified = sum(!is.na(qualified_date)),
       opportunity = sum(!is.na(opportunity_date)),
-      won = sum(won_as_of),
+      won = sum(.data[[outcome]]),
       .by = all_of(by)
     ) |>
     tidyr::pivot_longer(
