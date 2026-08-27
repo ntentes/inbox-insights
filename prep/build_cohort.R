@@ -56,6 +56,31 @@ backfill_skipped_checkpoints <- function(leads) {
     )
 }
 
+# Undo the backfill, recovering the dates as they were actually recorded. The
+# flags make this exact rather than approximate: a flagged date was NA in the
+# source, so blanking it restores the source precisely.
+#
+# This exists for funnel_snapshot(), which has to censor the *recorded* dates. A
+# date invented from a future opportunity is future knowledge however ordinary it
+# looks, so it has to come off before the censoring and be recomputed from
+# whatever was observable afterwards.
+restore_recorded_dates <- function(leads) {
+  leads |>
+    mutate(
+      qualified_date = if_else(
+        qualified_date_backfilled,
+        as.Date(NA),
+        qualified_date
+      ),
+      opportunity_date = if_else(
+        opportunity_date_backfilled,
+        as.Date(NA),
+        opportunity_date
+      )
+    ) |>
+    select(-qualified_date_backfilled, -opportunity_date_backfilled)
+}
+
 # A duration is only reported when it is non-negative. The two backdated
 # qualifications and the won-before-opportunity record would otherwise produce
 # negative days, and a negative duration averaged into a median is worse than a
@@ -65,20 +90,21 @@ non_negative_days <- function(from, to) {
   if_else(!is.na(days) & days >= 0, days, NA_real_)
 }
 
-# --- The cohort table -------------------------------------------------------
+# --- Derived fields ---------------------------------------------------------
 
-build_funnel_cohort <- function(funnel_raw = read_funnel_raw(), as_of = INBOX_AS_OF) {
-  funnel_raw |>
-    deduplicate_leads() |>
-    backfill_skipped_checkpoints() |>
+# Everything that follows from the stage dates. Factored out because the snapshot
+# has to recompute all of it after censoring, and recomputing it by hand in two
+# places is how two definitions of the same column drift apart.
+#
+# The rule this function obeys: every column here is derivable from the dates in
+# front of it. A derived value that could only have come from a date since
+# censored is a leak wearing a number's clothing.
+derive_cohort_fields <- function(leads, as_of) {
+  leads |>
     mutate(
       cohort_month = as.Date(format(entered_date, "%Y-%m-01")),
       observation_age_days = as.numeric(as_of - entered_date),
-
-      # The line the talk is about. won_as_of is the snapshot; won_eventually is
-      # hindsight. Anything shown to the agent must be built from the first.
       won_as_of = !is.na(won_date) & won_date <= as_of,
-      won_eventually = !is.na(won_date),
 
       days_to_qualified = non_negative_days(entered_date, qualified_date),
       days_to_opportunity = non_negative_days(entered_date, opportunity_date),
@@ -106,83 +132,113 @@ build_funnel_cohort <- function(funnel_raw = read_funnel_raw(), as_of = INBOX_AS
       use_for_time_to_won = use_for_time_to_opportunity &
         !is.na(days_to_won) &
         !is.na(days_opportunity_to_won)
-    ) |>
+    )
+}
+
+# The column order of funnel_cohort, in one place, so the cohort and the snapshot
+# cannot quietly disagree about it.
+COHORT_HINDSIGHT_COLUMNS <- "won_eventually"
+
+COHORT_COLUMNS <- c(
+  "lead_id",
+  "cohort_month",
+  "entered_date",
+  "qualified_date",
+  "opportunity_date",
+  "won_date",
+  "lost_date",
+  "qualified_date_backfilled",
+  "opportunity_date_backfilled",
+  "observation_age_days",
+  "won_as_of",
+  "won_eventually",
+  "days_to_qualified",
+  "days_to_opportunity",
+  "days_to_won",
+  "days_qualified_to_opportunity",
+  "days_opportunity_to_won",
+  "use_for_time_to_qualified",
+  "use_for_time_to_opportunity",
+  "use_for_time_to_won",
+  "channel",
+  "company_size",
+  "region",
+  "campaigns",
+  "late_industry",
+  "late_deal_value",
+  "late_competitor"
+)
+
+# --- The cohort table -------------------------------------------------------
+
+build_funnel_cohort <- function(funnel_raw = read_funnel_raw(), as_of = INBOX_AS_OF) {
+  funnel_raw |>
+    deduplicate_leads() |>
     # The late_ prefix is deliberate and load-bearing. These three are captured
     # partway down the funnel, so they are blank for every lead that stopped
     # earlier, and grouping a full-funnel denominator by one of them is a bug.
-    # Naming them so that the hazard travels with the column beats documenting
-    # it somewhere the reader will not be looking.
+    # Naming them so the hazard travels with the column beats documenting it
+    # somewhere the reader will not be looking.
     rename(
       late_industry = industry,
       late_deal_value = deal_value,
       late_competitor = competitor
     ) |>
-    select(
-      lead_id,
-      cohort_month,
-      entered_date,
-      qualified_date,
-      opportunity_date,
-      won_date,
-      lost_date,
-      qualified_date_backfilled,
-      opportunity_date_backfilled,
-      observation_age_days,
-      won_as_of,
-      won_eventually,
-      days_to_qualified,
-      days_to_opportunity,
-      days_to_won,
-      days_qualified_to_opportunity,
-      days_opportunity_to_won,
-      use_for_time_to_qualified,
-      use_for_time_to_opportunity,
-      use_for_time_to_won,
-      channel,
-      company_size,
-      region,
-      campaigns,
-      late_industry,
-      late_deal_value,
-      late_competitor
-    ) |>
+    backfill_skipped_checkpoints() |>
+    mutate(won_eventually = !is.na(won_date)) |>
+    derive_cohort_fields(as_of) |>
+    select(all_of(COHORT_COLUMNS)) |>
     arrange(lead_id)
 }
 
 # --- The snapshot the agent sees --------------------------------------------
 
-# Everything the agent is allowed to look at goes through here. Hindsight columns
-# are dropped, and any date after the as-of date is blanked -- a won date sitting
-# in the future is just as much of a leak as won_eventually is, and easier to
-# miss.
-COHORT_HINDSIGHT_COLUMNS <- "won_eventually"
+# Blank everything that was not observable at the as-of date.
+#
+# The dates are the obvious half. The late attributes are the half that is easy
+# to miss: late_industry is recorded when a lead qualifies, so a lead that
+# qualified in July has no industry as far as a June snapshot is concerned, even
+# though the cohort table has one sitting right there. Leaving it in tells the
+# agent which leads were about to progress.
+censor_unobservable <- function(leads, as_of) {
+  observed_date <- function(x) if_else(!is.na(x) & x <= as_of, x, as.Date(NA))
 
-funnel_snapshot <- function(funnel_cohort, as_of = INBOX_AS_OF) {
-  censor <- function(x) if_else(!is.na(x) & x <= as_of, x, as.Date(NA))
-
-  funnel_cohort |>
-    filter(entered_date <= as_of) |>
+  leads |>
     mutate(across(
       c(qualified_date, opportunity_date, won_date, lost_date),
-      censor
+      observed_date
     )) |>
     mutate(
-      # Durations have to be recomputed after censoring. Carrying the original
-      # days_to_won through would leak the future outcome as a number even with
-      # the date blanked out.
-      days_to_qualified = non_negative_days(entered_date, qualified_date),
-      days_to_opportunity = non_negative_days(entered_date, opportunity_date),
-      days_to_won = non_negative_days(entered_date, won_date),
-      days_qualified_to_opportunity =
-        non_negative_days(qualified_date, opportunity_date),
-      days_opportunity_to_won = non_negative_days(opportunity_date, won_date),
-      use_for_time_to_qualified = use_for_time_to_qualified &
-        !is.na(days_to_qualified),
-      use_for_time_to_opportunity = use_for_time_to_opportunity &
-        !is.na(days_to_opportunity),
-      use_for_time_to_won = use_for_time_to_won & !is.na(days_to_won)
+      # Reaching a stage can be known from any later stage the lead turns up at,
+      # so this is evaluated after the dates are censored rather than before.
+      .knows_qualified = !is.na(qualified_date) |
+        !is.na(opportunity_date) |
+        !is.na(won_date),
+      .knows_opportunity = !is.na(opportunity_date) | !is.na(won_date),
+      late_industry = if_else(.knows_qualified, late_industry, NA_character_),
+      late_deal_value = if_else(.knows_opportunity, late_deal_value, NA_real_),
+      late_competitor = if_else(.knows_opportunity, late_competitor, NA_character_)
     ) |>
-    select(-all_of(COHORT_HINDSIGHT_COLUMNS))
+    select(-.knows_qualified, -.knows_opportunity)
+}
+
+# Everything the agent is allowed to look at goes through here.
+#
+# The order of operations is the whole point. Undo the backfill, censor what was
+# not observable, then run the same cleaning and derivation the cohort ran. That
+# is not just a way to blank some columns -- it reconstructs what the pipeline
+# would have produced had it run on the as-of date, which is the only honest
+# definition of a point-in-time view. Censoring the already-cleaned table instead
+# leaves backfilled dates and late attributes computed from the future.
+funnel_snapshot <- function(funnel_cohort, as_of = INBOX_AS_OF) {
+  funnel_cohort |>
+    filter(entered_date <= as_of) |>
+    restore_recorded_dates() |>
+    censor_unobservable(as_of) |>
+    backfill_skipped_checkpoints() |>
+    derive_cohort_fields(as_of) |>
+    select(all_of(setdiff(COHORT_COLUMNS, COHORT_HINDSIGHT_COLUMNS))) |>
+    arrange(lead_id)
 }
 
 # --- Serialisation ----------------------------------------------------------
