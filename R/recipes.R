@@ -185,9 +185,15 @@ median_days_to <- function(cohort, stage = c("won", "opportunity", "qualified"),
 
   duration <- paste0("days_to_", stage)
   eligibility <- paste0("use_for_time_to_", stage)
+  stage_date <- paste0(stage, "_date")
 
+  # Reaching the stage is decided by the stage date, not by whether a duration
+  # could be computed from it. Filtering on the duration first would drop the
+  # backdated records -- the ones whose qualification predates their arrival --
+  # before they could be counted as excluded, so the two records the exclusion
+  # count most needs to report would vanish from both sides of it.
   cohort |>
-    filter(!is.na(.data[[duration]])) |>
+    filter(!is.na(.data[[stage_date]])) |>
     summarise(
       reached = n(),
       eligible = sum(.data[[eligibility]]),
