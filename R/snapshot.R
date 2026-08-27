@@ -29,9 +29,13 @@ SNAPSHOT_CENSORED_DATES <- c(
 # attribute keeps them, so a named date would make the two carriers disagree
 # about a value they both hold.
 valid_cutoff <- function(as_of) {
-  if (!inherits(as_of, "Date") || length(as_of) != 1 || is.na(as_of)) {
+  # is.finite() rather than is.na(): it rules out the missing case and the
+  # infinite one together. as.Date(Inf) is constructible and is not missing, so a
+  # positive infinity would wave every future event through while a negative one
+  # produces the same quietly-empty snapshot.
+  if (!inherits(as_of, "Date") || length(as_of) != 1 || !is.finite(as_of)) {
     stop(
-      "A snapshot cutoff has to be a single non-missing Date. Got: ",
+      "A snapshot cutoff has to be one finite, non-missing Date. Got: ",
       paste(utils::capture.output(str(as_of)), collapse = " "),
       call. = FALSE
     )
