@@ -57,6 +57,43 @@ gen_region_p <- c(
   LATAM = 0.08
 )
 
+# --- Late-populated attributes ----------------------------------------------
+# These are captured partway down the funnel, not at entry, so they are blank
+# for every lead that never got that far. That makes them unsafe to group a
+# full-funnel conversion denominator by -- the denominator silently becomes
+# "leads that qualified" -- and it means blank does not mean zero. Sales does
+# not record an industry for a lead nobody ever spoke to.
+gen_industry_p <- c(
+  Manufacturing = 0.24,
+  Retail = 0.19,
+  Technology = 0.17,
+  `Financial Services` = 0.14,
+  Healthcare = 0.12,
+  `Public Sector` = 0.08,
+  Education = 0.06
+)
+
+# Whoever the deal was competed against, recorded when it becomes an
+# opportunity. All invented; any resemblance to a real freight company is
+# accidental.
+gen_competitor_p <- c(
+  `Sagebrush Freight` = 0.31,
+  `Dustdevil Cargo` = 0.24,
+  `Mesa Logistics Group` = 0.18,
+  `Prickly Pear Transit` = 0.11,
+  `no competitor identified` = 0.16
+)
+
+# Deal size, also recorded at opportunity. Scaled by company size.
+gen_deal_value_median <- 24000
+gen_deal_value_sdlog <- 0.62
+gen_deal_value_size <- c(
+  Small = 0.45,
+  Medium = 1.00,
+  Large = 2.60,
+  Enterprise = 7.50
+)
+
 # --- Progression ------------------------------------------------------------
 # Three sequential gates, each a logistic function of channel, company size, and
 # a per-lead quality term shared across all three gates. Eventual entry-to-won
@@ -205,6 +242,44 @@ generate_leads <- function() {
   )
 }
 
+# Attributes captured partway down the funnel. Values are drawn for every lead
+# and then blanked for the leads that never reached the capturing stage, so the
+# missingness is a consequence of where each lead stopped rather than an
+# independent coin flip.
+add_late_attributes <- function(leads) {
+  n <- nrow(leads)
+
+  industry <- sample(
+    names(gen_industry_p),
+    n,
+    replace = TRUE,
+    prob = gen_industry_p
+  )
+  competitor <- sample(
+    names(gen_competitor_p),
+    n,
+    replace = TRUE,
+    prob = gen_competitor_p
+  )
+  deal_value <- unname(round(
+    rlnorm_median(n, gen_deal_value_median, gen_deal_value_sdlog) *
+      gen_deal_value_size[leads$company_size]
+  ))
+
+  # Captured at qualification.
+  industry[is.na(leads$qualified_date)] <- NA
+  # Captured when the lead becomes an opportunity.
+  competitor[is.na(leads$opportunity_date)] <- NA
+  deal_value[is.na(leads$opportunity_date)] <- NA
+
+  leads |>
+    mutate(
+      industry = .env$industry,
+      deal_value = .env$deal_value,
+      competitor = .env$competitor
+    )
+}
+
 generate_funnel_raw <- function(seed = INBOX_SEED) {
   set.seed(
     seed,
@@ -212,7 +287,8 @@ generate_funnel_raw <- function(seed = INBOX_SEED) {
     normal.kind = "Inversion",
     sample.kind = "Rejection"
   )
-  generate_leads()
+  generate_leads() |>
+    add_late_attributes()
 }
 
 if (sys.nframe() == 0L) {
