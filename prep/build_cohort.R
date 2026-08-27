@@ -169,6 +169,14 @@ COHORT_COLUMNS <- c(
   "late_competitor"
 )
 
+# A snapshot carries its own cutoff. This is what lets a downstream metric check
+# that it was given censored data instead of inferring it from the absence of a
+# column, which any stray select() can arrange.
+SNAPSHOT_COLUMNS <- c(
+  setdiff(COHORT_COLUMNS, COHORT_HINDSIGHT_COLUMNS),
+  "snapshot_as_of"
+)
+
 # --- The cohort table -------------------------------------------------------
 
 build_funnel_cohort <- function(funnel_raw = read_funnel_raw(), as_of = INBOX_AS_OF) {
@@ -201,7 +209,24 @@ build_funnel_cohort <- function(funnel_raw = read_funnel_raw(), as_of = INBOX_AS
 # though the cohort table has one sitting right there. Leaving it in tells the
 # agent which leads were about to progress.
 censor_unobservable <- function(leads, as_of) {
-  observed_date <- function(x) if_else(!is.na(x) & x <= as_of, x, as.Date(NA))
+  observed <- function(x) !is.na(x) & x <= as_of
+  observed_date <- function(x) if_else(observed(x), x, as.Date(NA))
+
+  # Visibility is decided from the recorded capture dates, before any of them are
+  # censored.
+  #
+  # Inferring "this lead had qualified" from a later stage is right for a skipped
+  # checkpoint, where the capture date is genuinely missing, and wrong whenever
+  # the capture date exists and is simply still in the future. The out-of-order
+  # record makes the difference visible: it was recorded won two days before it
+  # became an opportunity, so a cutoff falling between those two dates sees the
+  # win, would infer the opportunity from it, and would hand over a deal value
+  # captured at an event that has not happened yet.
+  knows_qualified <- observed(leads$qualified_date) |
+    (is.na(leads$qualified_date) &
+      (observed(leads$opportunity_date) | observed(leads$won_date)))
+  knows_opportunity <- observed(leads$opportunity_date) |
+    (is.na(leads$opportunity_date) & observed(leads$won_date))
 
   leads |>
     mutate(across(
@@ -209,17 +234,10 @@ censor_unobservable <- function(leads, as_of) {
       observed_date
     )) |>
     mutate(
-      # Reaching a stage can be known from any later stage the lead turns up at,
-      # so this is evaluated after the dates are censored rather than before.
-      .knows_qualified = !is.na(qualified_date) |
-        !is.na(opportunity_date) |
-        !is.na(won_date),
-      .knows_opportunity = !is.na(opportunity_date) | !is.na(won_date),
-      late_industry = if_else(.knows_qualified, late_industry, NA_character_),
-      late_deal_value = if_else(.knows_opportunity, late_deal_value, NA_real_),
-      late_competitor = if_else(.knows_opportunity, late_competitor, NA_character_)
-    ) |>
-    select(-.knows_qualified, -.knows_opportunity)
+      late_industry = if_else(.env$knows_qualified, late_industry, NA_character_),
+      late_deal_value = if_else(.env$knows_opportunity, late_deal_value, NA_real_),
+      late_competitor = if_else(.env$knows_opportunity, late_competitor, NA_character_)
+    )
 }
 
 # Everything the agent is allowed to look at goes through here.
@@ -231,13 +249,31 @@ censor_unobservable <- function(leads, as_of) {
 # definition of a point-in-time view. Censoring the already-cleaned table instead
 # leaves backfilled dates and late attributes computed from the future.
 funnel_snapshot <- function(funnel_cohort, as_of = INBOX_AS_OF) {
+  # Snapshots reconstruct backwards, never forwards. Censoring throws information
+  # away, so asking a January table for a June view returns whatever survived
+  # January -- fewer leads, fewer wins, and nothing in the result to say so.
+  if ("snapshot_as_of" %in% names(funnel_cohort)) {
+    source_as_of <- max(funnel_cohort$snapshot_as_of)
+    if (as_of > source_as_of) {
+      stop(
+        "Cannot take a ", as_of, " snapshot of a table already censored at ",
+        source_as_of, ".\n",
+        "  Everything after ", source_as_of, " has been discarded, so the result\n",
+        "  would be a ", source_as_of, " view wearing a later date.\n",
+        "  Start again from the cohort table.",
+        call. = FALSE
+      )
+    }
+  }
+
   funnel_cohort |>
     filter(entered_date <= as_of) |>
     restore_recorded_dates() |>
     censor_unobservable(as_of) |>
     backfill_skipped_checkpoints() |>
     derive_cohort_fields(as_of) |>
-    select(all_of(setdiff(COHORT_COLUMNS, COHORT_HINDSIGHT_COLUMNS))) |>
+    mutate(snapshot_as_of = as_of) |>
+    select(all_of(SNAPSHOT_COLUMNS)) |>
     arrange(lead_id)
 }
 
