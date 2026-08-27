@@ -24,7 +24,24 @@ gen_last_entry <- INBOX_AS_OF
 # Mild growth plus weekday seasonality. The growth is load-bearing: it makes the
 # recent cohorts the large ones, which is what gives the outcome-delay trap
 # enough weight to look like a real decline.
-gen_daily_base <- 14.1
+#
+# The base rate is set for statistical power rather than realism, and it is worth
+# saying why. The talk's correction compares cohorts over an equal window from
+# entry, and the newest complete cohort can only support a 30-day window -- any
+# longer and most of its leads have not aged enough to qualify. A 30-day window
+# catches roughly a third of the wins a cohort eventually gets, so at a few
+# hundred leads per month the corrected comparison rests on about sixteen wins
+# per cohort and swings by a quarter on chance alone.
+#
+# That is fatal for the demonstration rather than merely untidy. The first tuning
+# of this generator produced a newest cohort whose corrected rate was still 40%
+# below its neighbours, entirely from sampling noise, which would have meant
+# showing a correction that visibly corrected nothing. Tripling the arrival rate
+# fixes it for the right reason: across five seeds at this size the corrected
+# ratio lands between 0.96 and 1.19 of the reference months, four of them inside
+# 0.99 to 1.02. The correction works because the counts are large enough, not
+# because the seed was picked to flatter it.
+gen_daily_base <- 42.3
 gen_annual_growth <- 1.6
 gen_weekday_factor <- c(
   Sunday = 0.30,
