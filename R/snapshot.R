@@ -20,6 +20,25 @@ SNAPSHOT_CENSORED_DATES <- c(
   "entered_date", "qualified_date", "opportunity_date", "won_date", "lost_date"
 )
 
+# A cutoff has to be one real date, and it has to be bare.
+#
+# The missing-value case is the one that bites: as.Date(NA) sails through every
+# comparison, produces an empty snapshot that looks merely uneventful, and only
+# surfaces later as "missing value where TRUE/FALSE needed" somewhere unrelated.
+# The name-stripping is duller -- unique() drops names from a column while an
+# attribute keeps them, so a named date would make the two carriers disagree
+# about a value they both hold.
+valid_cutoff <- function(as_of) {
+  if (!inherits(as_of, "Date") || length(as_of) != 1 || is.na(as_of)) {
+    stop(
+      "A snapshot cutoff has to be a single non-missing Date. Got: ",
+      paste(utils::capture.output(str(as_of)), collapse = " "),
+      call. = FALSE
+    )
+  }
+  unname(as_of)
+}
+
 # The cutoff a table was censored at, or NULL if it is not a snapshot.
 #
 # The cutoff is recorded twice on purpose, and neither copy is redundant. The
@@ -45,7 +64,7 @@ snapshot_cutoff <- function(leads) {
         call. = FALSE
       )
     }
-    return(meta)
+    return(valid_cutoff(meta))
   }
 
   if (length(recorded) > 1) {
@@ -76,7 +95,8 @@ snapshot_cutoff <- function(leads) {
   # this raises the cost of an accident rather than defeating a determined
   # forgery. The mixed-cutoff and date-range checks are the ones that hold in
   # every case.
-  if (!is.null(meta) && !identical(as.Date(meta), as.Date(recorded))) {
+  recorded <- valid_cutoff(recorded)
+  if (!is.null(meta) && !identical(valid_cutoff(meta), recorded)) {
     stop(
       "This table's cutoff column says ", recorded, ", but the table was built\n",
       "  at ", meta, ". One of the two has been edited since.\n",
@@ -89,6 +109,7 @@ snapshot_cutoff <- function(leads) {
 
 # Record the cutoff on both carriers at once, so they cannot drift apart.
 stamp_snapshot_cutoff <- function(leads, as_of) {
+  as_of <- valid_cutoff(as_of)
   leads <- dplyr::mutate(leads, !!SNAPSHOT_CUTOFF_COLUMN := as_of)
   attr(leads, SNAPSHOT_CUTOFF_COLUMN) <- as_of
   leads

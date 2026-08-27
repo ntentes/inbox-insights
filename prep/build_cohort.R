@@ -253,6 +253,7 @@ funnel_snapshot <- function(funnel_cohort, as_of = INBOX_AS_OF) {
   # Snapshots reconstruct backwards, never forwards. Censoring throws information
   # away, so asking a January table for a June view returns whatever survived
   # January -- fewer leads, fewer wins, and nothing in the result to say so.
+  as_of <- valid_cutoff(as_of)
   source_as_of <- snapshot_cutoff(funnel_cohort)
   if (!is.null(source_as_of) && as_of > source_as_of) {
     stop(
