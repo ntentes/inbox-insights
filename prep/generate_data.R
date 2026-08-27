@@ -173,6 +173,19 @@ gen_skip_opportunity <- 0.015
 gen_lost_median <- 21
 gen_lost_sdlog <- 0.90
 
+# --- Deliberate data-entry anomalies ----------------------------------------
+# Everything above this point is a plausible business process. These are not.
+# They are a handful of broken records injected on purpose so that
+# prep/validate_data.R has something real to fail on -- a validation script that
+# can only ever pass teaches nobody anything.
+#
+# The affected rows are picked by position within a filtered set rather than at
+# random, so they land on the same leads every run and the validator's output is
+# stable enough to quote.
+gen_anomaly_negative_lag <- c(250L, 1900L)
+gen_anomaly_bad_ordering <- 600L
+gen_anomaly_duplicate_id <- c(from = 100L, to = 101L)
+
 # ---------------------------------------------------------------------------
 
 logistic <- function(x) 1 / (1 + exp(-x))
@@ -355,6 +368,30 @@ add_skipped_checkpoints <- function(leads) {
     )
 }
 
+# Break a few records on purpose. Called last, so nothing downstream in the
+# generator can quietly repair the damage.
+add_data_entry_anomalies <- function(leads) {
+  qualified_rows <- which(!is.na(leads$qualified_date))
+  full_path_rows <- which(!is.na(leads$opportunity_date) & !is.na(leads$won_date))
+
+  # A qualification date before the lead ever arrived, which yields a negative
+  # time in stage. Real CRMs produce these through manual backdating.
+  negative_lag <- qualified_rows[gen_anomaly_negative_lag]
+  leads$qualified_date[negative_lag] <-
+    leads$entered_date[negative_lag] - c(3, 11)
+
+  # A deal recorded as won before it became an opportunity.
+  bad_ordering <- full_path_rows[gen_anomaly_bad_ordering]
+  leads$won_date[bad_ordering] <- leads$opportunity_date[bad_ordering] - 2
+
+  # The same lead id on two different rows, so anything that assumes lead_id is
+  # a key will silently double-count or silently drop one of them.
+  leads$lead_id[full_path_rows[gen_anomaly_duplicate_id[["to"]]]] <-
+    leads$lead_id[full_path_rows[gen_anomaly_duplicate_id[["from"]]]]
+
+  leads
+}
+
 generate_funnel_raw <- function(seed = INBOX_SEED) {
   set.seed(
     seed,
@@ -369,7 +406,8 @@ generate_funnel_raw <- function(seed = INBOX_SEED) {
   generate_leads() |>
     add_late_attributes() |>
     add_campaigns() |>
-    add_skipped_checkpoints()
+    add_skipped_checkpoints() |>
+    add_data_entry_anomalies()
 }
 
 if (sys.nframe() == 0L) {
