@@ -209,6 +209,13 @@ gen_anomaly_duplicate_id <- c(from = 100L, to = 101L)
 
 logistic <- function(x) 1 / (1 + exp(-x))
 
+# seq() over dates hands back an integer-backed Date, while as.Date() and readr
+# both produce double-backed ones. The two print identically and serialise
+# identically, so the difference only shows up when something compares the
+# in-memory table against the parsed CSV with identical(). Normalising at the
+# source is cheaper than remembering which of the two any given column is.
+as_double_date <- function(x) structure(as.numeric(x), class = "Date")
+
 # A lognormal parameterised by the median, which is what the tuning targets are
 # expressed in, rather than by meanlog.
 rlnorm_median <- function(n, median, sdlog) {
@@ -228,7 +235,7 @@ generate_arrivals <- function() {
   lambda <- gen_daily_base *
     gen_annual_growth^elapsed_years *
     unname(gen_weekday_factor[weekday])
-  rep(dates, times = stats::rpois(length(dates), lambda))
+  as_double_date(rep(dates, times = stats::rpois(length(dates), lambda)))
 }
 
 # One row per lead: the four stage dates, the terminal lost date, and the three
