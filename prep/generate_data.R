@@ -475,7 +475,7 @@ read_funnel_raw <- function(path = inbox_funnel_raw_path()) {
   if (!file.exists(path)) {
     stop(
       "No generated funnel table at ", path, ".\n",
-      "Run prep/generate_data.R first, or prep/build_all.R for everything."
+      "Run: Rscript prep/generate_data.R"
     )
   }
   readr::read_csv(path, col_types = funnel_raw_col_types(), progress = FALSE)

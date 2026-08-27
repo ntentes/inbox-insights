@@ -255,7 +255,7 @@ read_funnel_cohort <- function(path = inbox_funnel_cohort_path()) {
   if (!file.exists(path)) {
     stop(
       "No cohort table at ", path, ".\n",
-      "Run prep/build_cohort.R first, or prep/build_all.R for everything."
+      "Run: Rscript prep/build_cohort.R"
     )
   }
   readr::read_csv(path, col_types = readr::cols(), progress = FALSE)
