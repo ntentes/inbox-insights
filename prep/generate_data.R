@@ -240,7 +240,13 @@ generate_leads <- function() {
   region <- sample(names(gen_region_p), n, replace = TRUE, prob = gen_region_p)
 
   quality <- stats::rnorm(n, 0, gen_quality_sd)
-  offset <- gen_channel_effect[channel] + gen_company_size_effect[company_size] + quality
+  # unname() throughout: looking a factor up by name returns a named vector, and
+  # those names ride along into every column derived from it. The CSV drops them
+  # so nothing downstream of the file ever noticed, but callers using the
+  # in-memory table got date columns carrying 21,000 names apiece.
+  offset <- unname(
+    gen_channel_effect[channel] + gen_company_size_effect[company_size] + quality
+  )
 
   # Sequential gates. Failing one stops the lead where it is.
   passed_qualified <- stats::runif(n) <
@@ -253,7 +259,7 @@ generate_leads <- function() {
   # Delays are drawn for every lead regardless of how far it got, so that the
   # random stream does not depend on the gate outcomes. Unreached stages are
   # blanked afterwards.
-  delay_scale <- gen_size_delay[company_size] * gen_channel_delay[channel]
+  delay_scale <- unname(gen_size_delay[company_size] * gen_channel_delay[channel])
   lag_qualified <- rlnorm_median(
     n,
     gen_stage_median[["qualified"]],
