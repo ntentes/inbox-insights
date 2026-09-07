@@ -1,6 +1,11 @@
 # roborev snapshots
 /.roborev/
 
+# Planning material. Never committed. The talk plan contains the section 6.6
+# scrub table, which maps real internal terms to their talk equivalents, so
+# publishing it would leak exactly the vocabulary the scrub exists to remove.
+/planning/
+
 # local configuration and secrets -- never commit these
 /config.R
 .Renviron
