@@ -43,6 +43,22 @@ The envelope records an authored-fixture provenance label and a SHA-256 snapshot
 identity. Validation reproduces the evidence with the house recipes and rejects
 different data, inconsistent time fields, and undeclared fields.
 
+## Approval and shared context
+
+`R/feedback.R` persists a versioned guidance state on a local folder board.
+Initialize it explicitly with the source report and snapshot, then use
+`record_feedback()` to add a correction. Recording feedback does not approve it.
+
+`approve_incomplete_cohort_rule()` is the separate human action. It requires a
+selected feedback ID, approver, and the hash of the state that was displayed.
+The saved rule retains the source feedback and approval time. A stale displayed
+state is rejected rather than approved silently.
+
+`R/context_archive.R` is the single context builder. It reads the persisted state
+and includes definitions and approved rules, never pending feedback or the
+misleading source-report prose. The rule and original report survive restarting
+the process; exported archives are accepted only when they match current state.
+
 ## Deliberate simplifications
 
 The current contract covers the one monthly-cohort worked example, not arbitrary
@@ -53,3 +69,9 @@ are a separate, unfinished path.
 Numerical validation does not establish that an interpretation or suggested action
 is sound. The initial fixture demonstrates exactly that distinction. Human review
 is still needed, and an authored fixture is not evidence of model compliance.
+
+The approval slice supports one canonical incomplete-cohort rule and assumes one
+local writer. The stale-state guard is not a multi-process transaction or access
+control. Attribution is self-reported, not authenticated Connect identity.
+The folder board uses the flat pin name `demo-guidance` because this backend
+rejects slashes; deployed board naming and concurrency need their own adapter.
