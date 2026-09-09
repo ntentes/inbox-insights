@@ -83,9 +83,12 @@ example_email_html <- function(report, snapshot) {
   )
 }
 
-write_email_preview <- function(report, snapshot, path) {
-  html <- example_email_html(report, snapshot)
+write_preview_html <- function(html, path) {
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-  writeLines(c("<!DOCTYPE html>", as.character(html)), path, useBytes = TRUE)
+  writeLines(c("<!DOCTYPE html>", htmltools::doRenderTags(html)), path, useBytes = TRUE)
   invisible(path)
+}
+
+write_email_preview <- function(report, snapshot, path) {
+  write_preview_html(example_email_html(report, snapshot), path)
 }
