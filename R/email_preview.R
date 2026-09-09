@@ -4,6 +4,9 @@ example_email_html <- function(report, snapshot) {
   validate_example_report(report, snapshot)
   tags <- htmltools::tags
   insight <- report$insight
+  logo <- base64enc::dataURI(
+    file = inbox_path("images", "chickencloud-logo.png"), mime = "image/png"
+  )
   version <- if (report$purpose == "teaching_example") {
     "First-run teaching example"
   } else {
@@ -37,7 +40,10 @@ example_email_html <- function(report, snapshot) {
     ),
     tags$body(
       tags$header(
-        tags$h1(report$company),
+        tags$h1(tags$img(
+          src = logo, alt = report$company, width = 300, height = 77,
+          style = "display: block; max-width: 100%; height: auto;"
+        )),
         tags$p("Weekly inbox insights"),
         tags$p(tags$strong(version), " | Data as of ", insight$data_as_of),
         tags$p("Authored teaching example; not a captured model run.", style = "font-size: .85em;"),

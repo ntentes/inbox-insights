@@ -14,6 +14,14 @@ reason behind each correction, read the
 [generated-data dictionary](data-dictionary.md). It distinguishes invented
 business explanations from the actual data and metric contracts.
 
+The ChickenCloud logo is an original cloud-shaped cartoon of Chicken, the
+speaker's dog. Editable artwork is in `images/chickencloud-logo.svg`; the
+transparent `images/chickencloud-logo.png` is its committed raster export for
+light backgrounds. Both email previews embed the PNG so they remain standalone.
+The supplied reference picture is not included. These previews do not send mail;
+actual email delivery will need an email-compatible image attachment or hosting
+strategy rather than relying on browser support for data URLs.
+
 ## Build the current artifacts
 
 Use R 4.5.0 and restore the pinned packages with `renv::restore()`. From the
