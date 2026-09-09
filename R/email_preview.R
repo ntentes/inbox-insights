@@ -40,6 +40,7 @@ example_email_html <- function(report, snapshot) {
         tags$h1(report$company),
         tags$p("Weekly inbox insights"),
         tags$p(tags$strong(version), " | Data as of ", insight$data_as_of),
+        tags$p("Authored teaching example; not a captured model run.", style = "font-size: .85em;"),
         tags$p("Reporting period: ", period(insight$reporting_period), " (28 days)")
       ),
       tags$main(

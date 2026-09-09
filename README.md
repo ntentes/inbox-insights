@@ -35,6 +35,7 @@ Open these local files in a browser:
 |---|---|
 | `artifacts/initial-report.html` | Deliberately misleading first-run finding |
 | `artifacts/approval.html` | Authored correction, captured human approvals, and the archive transition |
+| `artifacts/approval-slide.html` | Compact correction, approval, and saved-rule view for slide 5; links to the full audit replay |
 | `artifacts/corrected-report.html` | One reviewed corrected insight, in the same email layout |
 | `artifacts/corrected-report.json` | Full insight, evidence, reproducible code, and context references |
 | `artifacts/context-archive.json` | The canonical approved generation context |
@@ -49,6 +50,9 @@ chart omits partly observed cohorts rather than presenting only their oldest lea
 For the slide scaffold, install the Quarto CLI separately (the talk uses
 1.10.18), then run `quarto render inbox-insights.qmd`. The pinned `quarto` R
 package does not install the CLI. The notes are recording prompts, not a script.
+Open `inbox-insights.html` in a browser for the rough take. The embedded views
+are presentation excerpts; use the standalone files above for full evidence,
+code, and approval metadata.
 
 ## The report contract
 
