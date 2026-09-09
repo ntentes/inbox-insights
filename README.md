@@ -8,6 +8,11 @@ The implementation is in progress. Fixture mode is the default and makes no mode
 calls. The initial report is an **authored, deliberately misleading teaching
 example**, not a captured agent run or a recommended analysis.
 
+For the fictional sales process, column definitions, collection timing, and the
+reason behind each correction, read the
+[generated-data dictionary](data-dictionary.md). It distinguishes invented
+business explanations from the actual data and metric contracts.
+
 ## Build the current artifacts
 
 Use R 4.5.0 and restore the pinned packages with `renv::restore()`. From the
