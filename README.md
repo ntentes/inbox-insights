@@ -54,6 +54,11 @@ Open `inbox-insights.html` in a browser for the rough take. The embedded views
 are presentation excerpts; use the standalone files above for full evidence,
 code, and approval metadata.
 
+The deck is a **provisional dry-run scaffold**, not the final slides. The final
+talk targets **19-20 minutes**, with a 19:30 working budget including reading
+time, clips, and pauses. A loose 25-30-minute take can supply the transcript;
+the final script and slide polish come afterward.
+
 ## The report contract
 
 `R/report_contract.R` defines the monthly-cohort insight schema, its local
