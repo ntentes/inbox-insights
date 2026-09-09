@@ -18,11 +18,13 @@ Rscript prep/generate_data.R
 Rscript prep/validate_data.R
 Rscript prep/build_cohort.R
 Rscript prep/build_initial_report.R
+Rscript prep/build_as_of_chart.R
 Rscript prep/build_worked_example.R
 ```
 
-The first three commands rebuild the synthetic data. The fourth regenerates
-`fixtures/initial_bad_report.json`; the fifth replays the captured approvals in
+The first three commands rebuild the synthetic data. The report and chart builders
+regenerate `fixtures/initial_bad_report.json` and the two explanatory panels.
+The worked-example builder replays the captured approvals in
 `fixtures/worked_example.json`, seeds the local board, and builds the plain
 worked example. No credentials are needed. Run the scripts with
 `Rscript`: sourcing them loads functions but does not build their outputs.
@@ -37,6 +39,12 @@ Open these local files in a browser:
 | `artifacts/corrected-report.json` | Full insight, evidence, reproducible code, and context references |
 | `artifacts/context-archive.json` | The canonical approved generation context |
 | `artifacts/report-review.json` | Human review bound to that exact corrected report |
+| `artifacts/as-of-conversion.png` | Snapshot versus eventual conversion; hindsight is explanatory only |
+| `artifacts/equal-30-day-conversion.png` | Snapshot-only equal-horizon comparison with full denominators |
+
+Each chart also exports an aggregate CSV alongside its PNG. The first chart
+contains hindsight and must never become report or chat input. The equal-horizon
+chart omits partly observed cohorts rather than presenting only their oldest leads.
 
 For the slide scaffold, install the Quarto CLI separately (the talk uses
 1.10.18), then run `quarto render inbox-insights.qmd`. The pinned `quarto` R
