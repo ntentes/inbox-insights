@@ -93,13 +93,13 @@ gen_industry_p <- c(
 )
 
 # Whoever the deal was competed against, recorded when it becomes an
-# opportunity. All invented; any resemblance to a real freight company is
+# opportunity. All invented; any resemblance to a real software company is
 # accidental.
 gen_competitor_p <- c(
-  `Sagebrush Freight` = 0.31,
-  `Dustdevil Cargo` = 0.24,
-  `Mesa Logistics Group` = 0.18,
-  `Prickly Pear Transit` = 0.11,
+  `Sagebrush Software` = 0.31,
+  `Dustdevil Cloud` = 0.24,
+  `Mesa Systems` = 0.18,
+  `Prickly Pear Apps` = 0.11,
   `no competitor identified` = 0.16
 )
 
@@ -120,14 +120,14 @@ gen_deal_value_size <- c(
 # computed afterwards is inflated -- a lead touched by three campaigns is
 # counted three times. Populated at entry, so it is never blank.
 gen_campaign_pool <- c(
-  "Spring Freight Webinar",
-  "Cold Chain Guide",
-  "Rate Card Promo",
-  "Last-Mile Newsletter",
-  "Warehouse Automation Ebook",
+  "Spring Workflow Webinar",
+  "Approval Automation Guide",
+  "Team Plan Promo",
+  "Workflow Tips Newsletter",
+  "Process Automation Ebook",
   "Regional Roadshow",
   "Customer Referral Push",
-  "Fleet Efficiency Report"
+  "Team Efficiency Report"
 )
 gen_campaign_count_p <- c(`1` = 0.35, `2` = 0.35, `3` = 0.22, `4` = 0.08)
 
@@ -312,7 +312,7 @@ generate_leads <- function() {
   lost_date[passed_won] <- NA
 
   tibble::tibble(
-    lead_id = sprintf("TL-%06d", seq_len(n)),
+    lead_id = sprintf("CC-%06d", seq_len(n)),
     entered_date = entered_date,
     qualified_date = qualified_date,
     opportunity_date = opportunity_date,

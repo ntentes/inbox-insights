@@ -52,7 +52,7 @@ inbox_artifact_path <- function(...) inbox_path("artifacts", ...)
 
 # The fictitious company the generated data and the email header belong to.
 # Deliberately invented so no reader mistakes it for a real customer.
-INBOX_COMPANY <- "Tumbleweed Logistics"
+INBOX_COMPANY <- "ChickenCloud"
 
 # Every artifact in the repo is point-in-time as of this date. The generator
 # produces outcomes past it, but the agent is never shown them.

@@ -1,8 +1,9 @@
 # inbox-insights
 
 Materials for the posit::conf(2026) talk **Inbox Insights with ellmer and Posit
-Connect**. The fictitious company is Tumbleweed Logistics. All data is generated
-from a fixed seed; no company data or production artifacts are included.
+Connect**. The fictitious company is **ChickenCloud**, a B2B SaaS company selling
+workflow software to other businesses. All data is generated from a fixed seed;
+no company data or production artifacts are included.
 
 The implementation is in progress. Fixture mode is the default and makes no model
 calls. The initial report is an **authored, deliberately misleading teaching
@@ -120,6 +121,12 @@ For a new correction, use a separate board, `initialize_guidance()`, and
 `record_feedback()`; inspect the rule before `approve_incomplete_cohort_rule()`,
 then inspect the report before `review_corrected_report()`. Only after those human
 actions can `capture_worked_fixture()` export a replacement reviewed fixture.
+
+The ChickenCloud rename changes synthetic identifiers and campaign/competitor
+labels, not simulated dates, outcomes, or deal values. The current fixture captures
+fresh rule and report approvals for the renamed example. Older local boards are
+bound to the earlier snapshot: preserve them separately or choose a fresh
+`INBOX_BOARD` rather than rewriting their saved approvals.
 
 ## Deliberate simplifications
 
