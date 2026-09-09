@@ -16,8 +16,10 @@ as_of_conversion_chart_data <- function(funnel_cohort, as_of = INBOX_AS_OF) {
   snapshot <- funnel_snapshot(funnel_cohort, as_of = as_of)
   observed <- cohort_conversion(snapshot, as_of = as_of) |>
     dplyr::mutate(basis = "as_of", outcome_horizon = "snapshot")
+  explanatory_cohort <- funnel_cohort |>
+    dplyr::mutate(observation_age_days = as.numeric(as_of - entered_date))
   eventual <- cohort_conversion(
-    funnel_cohort, basis = "eventual", as_of = as_of
+    explanatory_cohort, basis = "eventual", as_of = as_of
   ) |>
     dplyr::mutate(basis = "eventual", outcome_horizon = "eventual")
 
