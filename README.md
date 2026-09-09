@@ -55,14 +55,21 @@ chart omits partly observed cohorts rather than presenting only their oldest lea
 For the slide scaffold, install the Quarto CLI separately (the talk uses
 1.10.18), then run `quarto render inbox-insights.qmd`. The pinned `quarto` R
 package does not install the CLI. The notes are recording prompts, not a script.
-Open `inbox-insights.html` in a browser for the rough take. The embedded views
+Open `inbox-insights.html` in a browser to inspect the current scaffold. The embedded views
 are presentation excerpts; use the standalone files above for full evidence,
 code, and approval metadata.
 
-The deck is a **provisional dry-run scaffold**, not the final slides. The final
-talk targets **19-20 minutes**, with a 19:30 working budget including reading
-time, clips, and pauses. A loose 25-30-minute take can supply the transcript;
-the final script and slide polish come afterward.
+The deck is the **first-take scaffold**, not the final slides. The telling has
+been recorded and transcribed; its script edit will replace the current order
+and prompts. The final talk targets **19-20 minutes**, with a 19:30 working budget
+including reading time, clips, and pauses.
+
+The revised scope includes actual ellmer/mcp-repl wiring, a snapshot-data handoff,
+a brief pointer to token-limit logic in the report runner, and a scheduling/access
+walkthrough on a pre-deployed Connect report. The integration and token-limit
+code are not implemented yet, and the Connect capture still needs preparation.
+Fresh model generation on camera is not required; the current artifact build
+remains credential-free fixture replay.
 
 ## The report contract
 
