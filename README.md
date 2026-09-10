@@ -1,6 +1,6 @@
 # Inbox Insights with ellmer and Posit Connect
 
-The proof of concept behind the posit::conf(2026) talk of the same name, by
+The proof of concept behind the [posit::conf(2026)](https://conf.posit.co/2026/) talk of the same name, by
 Konstantinos Ntentes, Senior Data Scientist at Posit.
 
 This architecture highlights one strategy of many to use when crowdsourcing an
