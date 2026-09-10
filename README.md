@@ -34,14 +34,17 @@ Rscript prep/build_cohort.R
 Rscript prep/build_initial_report.R
 Rscript prep/build_as_of_chart.R
 Rscript prep/build_worked_example.R
+Rscript prep/build_weekly_report.R
 ```
 
 The first three commands rebuild the synthetic data. The report and chart builders
 regenerate `fixtures/initial_bad_report.json` and the two explanatory panels.
 The worked-example builder replays the captured approvals in
 `fixtures/worked_example.json`, seeds the local board, and builds the plain
-worked example. No credentials are needed. Run the scripts with
-`Rscript`: sourcing them loads functions but does not build their outputs.
+worked example. The weekly builder then writes both versions of the
+three-insight email and their fixtures. No credentials are needed. Run the
+scripts with `Rscript`: sourcing them loads functions but does not build their
+outputs.
 
 Open these local files in a browser:
 
@@ -51,6 +54,8 @@ Open these local files in a browser:
 | `artifacts/approval.html` | Authored correction, captured human approvals, and the archive transition |
 | `artifacts/approval-slide.html` | Compact correction, approval, and saved-rule view for slide 5; links to the full audit replay |
 | `artifacts/corrected-report.html` | One reviewed corrected insight, in the same email layout |
+| `artifacts/first-run-email.html` | The three-insight weekly email as the first run produced it |
+| `artifacts/weekly-email.html` | The same email after the approved correction; only the lead insight differs |
 | `artifacts/corrected-report.json` | Full insight, evidence, reproducible code, and context references |
 | `artifacts/context-archive.json` | The canonical approved generation context |
 | `artifacts/report-review.json` | Human review bound to that exact corrected report |
@@ -75,10 +80,10 @@ including reading time, clips, and pauses.
 
 The revised scope includes actual ellmer/mcp-repl wiring, a snapshot-data handoff,
 a brief pointer to token-limit logic in the report runner, and a scheduling/access
-walkthrough on a pre-deployed Connect report. The integration and token-limit
-code are not implemented yet, and the Connect capture still needs preparation.
-Fresh model generation on camera is not required; the current artifact build
-remains credential-free fixture replay.
+walkthrough on a pre-deployed Connect report. The wiring, handoff and token
+limits live in `weekly-report.Rmd` (see [The live runner](#the-live-runner));
+the Connect capture still needs preparation. Fresh model generation on camera is
+not required; the default artifact build remains credential-free fixture replay.
 
 The correction sequence also requires the speaker to enter and submit feedback
 in a working app, show it saved as pending, and approve the standing rule
@@ -142,12 +147,43 @@ fresh rule and report approvals for the renamed example. Older local boards are
 bound to the earlier snapshot: preserve them separately or choose a fresh
 `INBOX_BOARD` rather than rewriting their saved approvals.
 
+## The live runner
+
+`weekly-report.Rmd` is the opt-in path that calls a model. It is not part of the
+build above and needs two things a clean clone does not have: the `mcp-repl`
+binary and provider credentials, chosen through `INBOX_CHAT_PROVIDER` and
+`INBOX_CHAT_MODEL` (see `config.example.R`; the API key belongs in `~/.Renviron`).
+
+It writes `funnel_snapshot()` to a scratch directory, spawns a sandboxed R REPL
+there, and gives the model that REPL plus three form tools: shortlist candidate
+questions, hand in a developed headline, submit the report. A headline's evidence
+is a data frame the model saves from its own session with `saveRDS()`; the tool
+takes the file name and the code the model says produced it. `R/live_report.R`
+checks the table is well formed, the insight fits the schema, and the code
+parses. It does not re-run the code. The result is labelled `live_model_run`,
+submitted for review, and written to `artifacts/live/`. On Connect the email is
+delivered through `rsc_email_body_html` and suppressed when the run fails.
+
+`R/token_budget.R` holds the caps for an unattended run: past a threshold the
+next tool result carries a notice asking the model to wrap up; past either cap
+the run aborts and nothing is written.
+
+The document renders through `weekly-report.template.html`, which is a doctype
+and the body and nothing else, so the page Connect shows is the same HTML as
+the email it sends. `Rscript deploy.R` publishes it: it fetches the Linux
+`mcp-repl` release into `bin/` (gitignored), bundles the Rmd with the R files it
+sources, `data/funnel_cohort.csv` and the logo, registers the server named in
+`CONNECT_SERVER` with `CONNECT_API_KEY`, and copies `ANTHROPIC_API_KEY` into the
+content's environment. Schedule and recipients are set in Connect afterwards.
+The Connect host needs glibc 2.35 or newer for the `mcp-repl` release.
+
 ## Deliberate simplifications
 
-The current contract covers the one monthly-cohort worked example, not arbitrary
-analysis types. Its reproducible-code field must match the known recipe expression;
-submitted code is never evaluated. A general live REPL and its runtime controls
-are a separate, unfinished path.
+The authored contract covers the three fixture insight kinds, not arbitrary
+analysis types. Its reproducible-code field must match the known recipe
+expression; submitted code is never evaluated. The live runner accepts any table
+shape and, like the reference implementation it follows, does not re-execute the
+model's code; the human reviewer is the check on the finding.
 
 Numerical validation does not establish that an interpretation or suggested action
 is sound. The initial fixture demonstrates exactly that distinction. Human review
@@ -159,5 +195,6 @@ control. Attribution is self-reported, not authenticated Connect identity.
 The folder board uses flat pin names `demo-guidance` and `demo-report-review` because this backend
 rejects slashes; deployed board naming and concurrency need their own adapter.
 The current archive contains shared definitions and the worked rule, not report
-history or a chat interface. The current email is a one-insight preview, not the
-finished three-insight email. No email is sent by these scripts.
+history or a chat interface. The fixture emails are authored, not model output;
+the live runner's email is a model's submission and is never written to
+`fixtures/`. No email is sent by the build scripts.
