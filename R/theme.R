@@ -14,6 +14,8 @@
 # the charts both live in R/ and both consume this, so a file under apps/ would
 # have R/ depending on apps/. The Shiny-specific part is inbox_bs_theme() below.
 
+source(here::here("R", "config.R"))
+
 # --- Contrast ---------------------------------------------------------------
 
 # WCAG 2.1 relative luminance and contrast ratio. Kept here rather than in the
@@ -108,23 +110,23 @@ inbox_preview_css <- function(max_width = "820px") {
     sprintf(".muted { color: %s; }", p$muted),
     ".small { font-size: 14px; }",
 
-    # Header
-    sprintf(".masthead { display: flex; align-items: center; gap: 16px;"),
-    sprintf("  padding-bottom: 20px; border-bottom: 2px solid %s; }", p$ink),
+    # Header. A two-cell table rather than a flex row, because the same markup
+    # is the email and mail clients lay out tables and nothing else.
+    sprintf(".masthead { width: 100%%; border-collapse: collapse; border-bottom: 2px solid %s; }", p$ink),
+    ".masthead td { padding: 0 0 20px; vertical-align: middle; }",
     ".masthead img { display: block; width: 210px; height: auto; }",
-    ".masthead .titles { flex: 1; }",
 
     # Tables. No vertical rules, hairline horizontals, tabular figures so the
     # digits line up in columns.
-    "table { border-collapse: collapse; width: 100%; margin: 12px 0 8px; font-size: 15.5px; }",
-    sprintf("caption { caption-side: bottom; text-align: left; font-size: 13.5px;"),
+    "table.evidence { border-collapse: collapse; width: 100%; margin: 12px 0 8px; font-size: 15.5px; }",
+    sprintf(".evidence caption { caption-side: bottom; text-align: left; font-size: 13.5px;"),
     sprintf("  color: %s; padding-top: 10px; }", p$muted),
-    sprintf("th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid %s;", p$rule),
+    sprintf(".evidence th, .evidence td { padding: 9px 12px; text-align: right; border-bottom: 1px solid %s; overflow-wrap: anywhere;", p$rule),
     "  font-variant-numeric: tabular-nums; }",
-    "thead th { font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase;",
+    ".evidence thead th { font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase;",
     sprintf("  color: %s; border-bottom: 1px solid %s; }", p$muted, p$rule_strong),
-    "th:first-child, td:first-child, thead th:first-child { text-align: left; }",
-    sprintf("tbody th { font-weight: 600; color: %s; }", p$ink),
+    ".evidence th:first-child, .evidence td:first-child { text-align: left; }",
+    sprintf(".evidence tbody th { font-weight: 600; color: %s; }", p$ink),
 
     # Callouts. Intent is carried by the left border, which is the one place the
     # accent appears in the email.
@@ -136,8 +138,10 @@ inbox_preview_css <- function(max_width = "820px") {
     # The deterministic headline strip. Counts only, and deliberately not
     # colour-coded: a red -12% would assert a problem the insights below argue
     # you cannot conclude from a snapshot.
-    ".stats { display: flex; gap: 10px; margin: 26px 0 6px; }",
-    sprintf(".stat { flex: 1; background: %s; border: 1px solid %s;", p$surface, p$rule),
+    ".stats { width: 100%; border-collapse: collapse; margin: 26px 0 6px; }",
+    ".stats td { padding: 0 10px 0 0; vertical-align: top; width: 25%; }",
+    ".stats td:last-child { padding-right: 0; }",
+    sprintf(".stat { background: %s; border: 1px solid %s;", p$surface, p$rule),
     "  border-radius: 4px; padding: 12px 14px; }",
     sprintf(".stat .k { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;"),
     sprintf("  text-transform: uppercase; color: %s; }", p$muted),
@@ -166,6 +170,65 @@ inbox_preview_css <- function(max_width = "820px") {
     "footer p { margin: 0 0 5px; }",
     sprintf("a { color: %s; }", p$accent_ink),
     sep = "\n"
+  )
+}
+
+# The same rules as inbox_preview_css(), as inline style strings.
+#
+# Mail clients drop <style> blocks, or parts of them, and none of them lay out
+# flexbox, so the email carries every rule on the element it applies to and
+# uses tables where the CSS used flex. The page gets the same markup: an inline
+# style and a stylesheet rule that agree cannot make two designs.
+inbox_email_styles <- function() {
+  p <- INBOX_PALETTE
+  cell <- function(align, extra = "") {
+    sprintf("padding: 9px 12px; text-align: %s; border-bottom: 1px solid %s; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;%s",
+      align, p$rule, extra)
+  }
+  list(
+    body = sprintf("margin: 0; padding: 32px 16px; background: %s; color: %s; font: 17px/1.6 %s;",
+      p$surface, p$ink, inbox_font_stack),
+    sheet = sprintf(paste(
+      "max-width: 820px; margin: 0 auto; background: %s; border: 1px solid %s;",
+      "border-radius: 6px; padding: 40px 44px; color: %s; font: 17px/1.6 %s;"),
+      p$page, p$rule, p$ink, inbox_font_stack),
+    h1 = sprintf("font-size: 27px; margin: 0 0 4px; color: %s; line-height: 1.25; letter-spacing: -0.01em;", p$ink),
+    h2 = sprintf("font-size: 22px; margin: 32px 0 8px; color: %s; line-height: 1.25; letter-spacing: -0.01em;", p$ink),
+    label = sprintf(paste(
+      "font-size: 11.5px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;",
+      "color: %s; margin: 28px 0 6px; line-height: 1.25;"), p$muted),
+    p = "margin: 0 0 14px;",
+    muted_small = sprintf("margin: 0 0 14px; color: %s; font-size: 14px;", p$muted),
+    masthead = sprintf("width: 100%%; border-collapse: collapse; border-bottom: 2px solid %s;", p$ink),
+    masthead_logo_cell = "padding: 0 16px 20px 0; vertical-align: middle; width: 210px;",
+    masthead_titles_cell = "padding: 0 0 20px; vertical-align: middle;",
+    logo = "display: block; width: 210px; height: auto; border: 0;",
+    table = "border-collapse: collapse; width: 100%; margin: 12px 0 8px; font-size: 15.5px;",
+    caption = sprintf("caption-side: bottom; text-align: left; font-size: 13.5px; color: %s; padding-top: 10px;", p$muted),
+    th_col_first = cell("left", sprintf(" font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase; color: %s; border-bottom-color: %s;", p$muted, p$rule_strong)),
+    th_col = cell("right", sprintf(" font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase; color: %s; border-bottom-color: %s;", p$muted, p$rule_strong)),
+    th_row = cell("left", sprintf(" font-weight: 600; color: %s;", p$ink)),
+    td = cell("right"),
+    callout = sprintf("border-left: 3px solid %s; background: %s; padding: 12px 16px; margin: 0 0 16px;", p$accent, p$surface),
+    callout_quiet = sprintf("border-left: 3px solid %s; background: %s; padding: 12px 16px; margin: 0 0 16px;", p$rule_strong, p$surface),
+    callout_p = "margin: 0;",
+    stats = "width: 100%; border-collapse: collapse; margin: 26px 0 6px;",
+    stats_cell = "padding: 0 10px 0 0; vertical-align: top; width: 25%;",
+    stats_cell_last = "padding: 0; vertical-align: top; width: 25%;",
+    stat = sprintf("background: %s; border: 1px solid %s; border-radius: 4px; padding: 12px 14px;", p$surface, p$rule),
+    stat_k = sprintf("font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: %s;", p$muted),
+    stat_v = sprintf("font-size: 25px; font-weight: 600; line-height: 1.25; color: %s; font-variant-numeric: tabular-nums;", p$ink),
+    stat_d = sprintf("font-size: 12.5px; color: %s; font-variant-numeric: tabular-nums;", p$muted),
+    insight = "display: block;",
+    insight_next = sprintf("display: block; border-top: 1px solid %s; margin-top: 40px; padding-top: 28px;", p$rule),
+    chart = "display: block; width: 100%; height: auto; margin: 10px 0 2px; border: 0;",
+    pre = sprintf("background: %s; border: 1px solid %s; border-radius: 4px; padding: 14px 16px; overflow-x: auto; margin: 0 0 14px;", p$code_surface, p$rule),
+    code = sprintf("font-family: %s; font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere;", inbox_mono_stack),
+    footer = sprintf("display: block; margin-top: 36px; padding-top: 16px; border-top: 1px solid %s; font-size: 13px; color: %s; overflow-wrap: anywhere;", p$rule, p$muted),
+    footer_p = "margin: 0 0 5px;",
+    banner = sprintf("border-left: 3px solid %s; background: %s; padding: 12px 16px; margin: 24px 0 0;", p$accent, p$surface),
+    banner_quiet = sprintf("border-left: 3px solid %s; background: %s; padding: 12px 16px; margin: 10px 0 0;", p$rule_strong, p$surface),
+    link = sprintf("color: %s; font-weight: 600;", p$accent_ink)
   )
 }
 
@@ -265,6 +328,19 @@ inbox_bs_theme <- function() {
       .text-muted-warm { color: %s !important; }
       .tabular { font-variant-numeric: tabular-nums; }
       .btn-primary { border-color: %s; }
+      .masthead-logo { height: 36px; width: auto; margin-right: 12px; vertical-align: middle; }
     ", p$rule, p$muted, p$accent, p$muted, p$ink)
+  )
+}
+
+# The same logo the email opens with, embedded the same way, so an app and the
+# email it belongs to are recognisably one thing.
+inbox_app_masthead <- function(title) {
+  logo <- base64enc::dataURI(
+    file = inbox_path("images", "chickencloud-logo.png"), mime = "image/png"
+  )
+  htmltools::tags$div(class = "d-inline-flex align-items-center",
+    htmltools::tags$img(src = logo, alt = INBOX_COMPANY, class = "masthead-logo"),
+    htmltools::tags$span(title)
   )
 }
