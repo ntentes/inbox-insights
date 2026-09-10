@@ -11,11 +11,13 @@
 # check_token_budget() sets it aside, and every tool passed through
 # deliver_budget_notice() appends it to its next reply, once.
 
-token_budget <- function(input_cap, output_cap, warn_at = 0.8) {
-  stopifnot(input_cap > 0, output_cap > 0, warn_at > 0, warn_at < 1)
+token_budget <- function(input_cap, output_cap, warn_at = 0.8, call_cap = Inf) {
+  stopifnot(input_cap > 0, output_cap > 0, warn_at > 0, warn_at < 1, call_cap > 0)
   budget <- new.env(parent = emptyenv())
   budget$input_cap <- input_cap
   budget$output_cap <- output_cap
+  budget$call_cap <- call_cap
+  budget$calls <- 0L
   budget$warn_at <- warn_at
   budget$warned <- FALSE
   budget$pending <- NULL
@@ -23,12 +25,15 @@ token_budget <- function(input_cap, output_cap, warn_at = 0.8) {
 }
 
 # `usage` is chat$get_tokens(): one row per completed assistant turn, with
-# `input` and `output` columns. Input is billed on every turn, so the sum is
-# what the run costs, not the size of the context.
+# `input`, `output` and `cached_input` columns. Input is billed on every turn,
+# so the sum is what the run costs, not the size of the context. Cached input
+# is billed too, at a lower rate, and Anthropic reports it separately from
+# `input`; leaving it out would undercount every turn after the first.
 check_token_budget <- function(budget, usage) {
   if (is.null(usage) || !nrow(usage)) return(invisible(budget))
   count <- function(x) format(x, big.mark = ",", scientific = FALSE, trim = TRUE)
-  used_in <- sum(usage$input, na.rm = TRUE)
+  cached <- if ("cached_input" %in% names(usage)) usage$cached_input else 0
+  used_in <- sum(usage$input, na.rm = TRUE) + sum(cached, na.rm = TRUE)
   used_out <- sum(usage$output, na.rm = TRUE)
 
   if (used_in > budget$input_cap || used_out > budget$output_cap) {
@@ -50,6 +55,20 @@ check_token_budget <- function(budget, usage) {
       "Stop exploring. Finish the headline in progress, submit what is ready, ",
       "and call submit_report."
     )
+  }
+  invisible(budget)
+}
+
+# Tokens are only reported per completed turn, so a model making many small
+# tool calls would run for a long time before the token caps noticed. This is
+# for chat$on_tool_request(), which runs before the tool does and whose errors
+# abort the run. It cannot live inside the tool: ellmer catches a tool's error
+# and hands it back to the model as a result, which is a nudge, not a stop.
+count_tool_call <- function(budget) {
+  budget$calls <- budget$calls + 1L
+  if (budget$calls > budget$call_cap) {
+    stop("Tool call cap reached (", budget$call_cap, " calls). Run aborted.",
+      call. = FALSE)
   }
   invisible(budget)
 }

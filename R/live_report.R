@@ -22,6 +22,38 @@ LIVE_REPORT_PURPOSE <- "weekly_email_live"
 # An email table has to be readable. Past this the agent should aggregate.
 LIVE_EVIDENCE_MAX_ROWS <- 40L
 
+# Value columns beside the labels. Four columns fit the email's width; a fifth
+# runs out of the sheet on the right.
+LIVE_EVIDENCE_MAX_COLUMNS <- 3L
+
+# How a model's numbers read in the email and the apps. The model names its
+# columns, and the name and the values decide the format: money in dollars,
+# percentages and shares to two decimals, whole numbers whole, anything else to
+# two decimals. Applied per column, so a column is formatted one way throughout.
+format_evidence_values <- function(column, values) {
+  values <- as.numeric(values)
+  words <- strsplit(tolower(gsub("[^A-Za-z0-9]+", " ", column)), " ", fixed = TRUE)[[1]]
+  has <- function(...) any(c(...) %in% words)
+  whole <- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
+  if (has("value", "amount", "revenue", "arr", "usd", "dollar", "dollars", "price", "cost", "spend", "budget")) {
+    return(paste0("$", whole(values)))
+  }
+  if (has("pct", "percent", "percentage")) return(sprintf("%.2f%%", values))
+  if (has("share", "rate", "conversion", "proportion")) {
+    return(sprintf("%.2f%%", if (all(abs(values) <= 1)) 100 * values else values))
+  }
+  if (all(values == round(values))) return(whole(values))
+  format(round(values, 2), nsmall = 2, big.mark = ",", scientific = FALSE, trim = TRUE)
+}
+
+# The evidence, column by column, as strings ready to show.
+format_evidence_table <- function(evidence) {
+  columns <- unlist(evidence$value_columns)
+  lapply(seq_along(columns), function(j) {
+    format_evidence_values(columns[[j]], vapply(evidence$rows, function(row) as.numeric(row$values[[j]]), numeric(1)))
+  })
+}
+
 # Evidence is a small labelled table: one label column and any number of numeric
 # columns. General enough for a finding nobody anticipated, typed enough to
 # render without guessing at formatting.
@@ -94,6 +126,14 @@ live_evidence_from_frame <- function(frame) {
       call. = FALSE
     )
   }
+  if (ncol(frame) - 1L > LIVE_EVIDENCE_MAX_COLUMNS) {
+    stop(
+      "The evidence table has ", ncol(frame) - 1L, " value columns; at most ",
+      LIVE_EVIDENCE_MAX_COLUMNS, " fit beside the labels in an email. Keep the",
+      " columns that carry the finding and drop the rest.",
+      call. = FALSE
+    )
+  }
 
   labels <- as.character(frame[[1]])
   if (anyNA(labels) || !all(nzchar(trimws(labels)))) {
@@ -130,6 +170,23 @@ read_live_evidence <- function(scratch, file) {
 validate_live_insight <- function(insight) {
   validate_report_value(insight, live_insight_schema())
 
+  # The row cap is checked here as well as when the RDS is read, so an insight
+  # that arrives already serialised is held to the same size.
+  if (length(insight$evidence$rows) > LIVE_EVIDENCE_MAX_ROWS) {
+    stop(
+      "Evidence has ", length(insight$evidence$rows), " rows; the limit is ",
+      LIVE_EVIDENCE_MAX_ROWS, ". Aggregate before submitting.",
+      call. = FALSE
+    )
+  }
+  if (length(insight$evidence$value_columns) > LIVE_EVIDENCE_MAX_COLUMNS) {
+    stop(
+      "Evidence has ", length(insight$evidence$value_columns), " value columns; the limit is ",
+      LIVE_EVIDENCE_MAX_COLUMNS, ". Drop the columns that do not carry the finding.",
+      call. = FALSE
+    )
+  }
+
   width <- length(insight$evidence$value_columns)
   for (i in seq_along(insight$evidence$rows)) {
     if (length(insight$evidence$rows[[i]]$values) != width) {
@@ -163,6 +220,12 @@ validate_live_report <- function(report, snapshot) {
       !setequal(names(report), fields)) {
     stop("Invalid live report envelope fields.", call. = FALSE)
   }
+  if (!identical(as.integer(report$schema_version), 1L)) {
+    stop("Unsupported live report schema_version.", call. = FALSE)
+  }
+  validate_report_value(report$report_id, list(
+    type = "string", minLength = 1L
+  ), "report_id")
   validate_report_value(report$purpose, list(
     type = "string", enum = LIVE_REPORT_PURPOSE
   ), "purpose")
@@ -175,7 +238,13 @@ validate_live_report <- function(report, snapshot) {
     provider = list(type = "string", minLength = 1L),
     model = list(type = "string", minLength = 1L),
     generated_at = list(type = "string", minLength = 1L),
-    note = list(type = "string", minLength = 1L)
+    note = list(type = "string", minLength = 1L),
+    # What the run cost, in the units every provider reports. Cached input
+    # counts as input; it was sent and billed.
+    tokens = report_object(list(
+      input = list(type = "number"),
+      output = list(type = "number")
+    ))
   )), "provenance")
 
   if (!identical(report$company, INBOX_COMPANY) ||
@@ -201,7 +270,20 @@ validate_live_report <- function(report, snapshot) {
   invisible(report)
 }
 
+# `usage` is chat$get_tokens(): one row per assistant turn with input, output
+# and, for providers that report it, cached_input columns. Summed into the two
+# numbers the footer shows.
+live_token_usage <- function(usage) {
+  if (is.null(usage) || !nrow(usage)) return(list(input = 0, output = 0))
+  cached <- if ("cached_input" %in% names(usage)) usage$cached_input else 0
+  list(
+    input = sum(usage$input, na.rm = TRUE) + sum(cached, na.rm = TRUE),
+    output = sum(usage$output, na.rm = TRUE)
+  )
+}
+
 new_live_report <- function(insights, snapshot, provider, model,
+                            tokens = list(input = 0, output = 0),
                             report_id = "weekly-report-live") {
   result <- list(
     schema_version = 1L,
@@ -219,7 +301,8 @@ new_live_report <- function(insights, snapshot, provider, model,
         "the data frame the model saved from its own sandboxed R session, shown",
         "as submitted; the code beside it is the model's account and was not",
         "re-run here. Submitted for review, not reviewed."
-      )
+      ),
+      tokens = tokens
     ),
     headline_metrics = headline_metrics(snapshot),
     insights = insights
