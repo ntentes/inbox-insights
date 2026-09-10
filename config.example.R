@@ -13,6 +13,8 @@ Sys.setenv(INBOX_MODE = "fixture")
 Sys.setenv(INBOX_CHAT_PROVIDER = "anthropic")
 Sys.setenv(INBOX_CHAT_MODEL = "claude-sonnet-5")
 
-# Where the pin board lives. The talk uses a versioned folder board so the demo
-# runs on one laptop; see the README for the Connect and S3 equivalents.
+# Where the pin board lives: a folder path, or "connect" for the Posit Connect
+# board of the server in CONNECT_SERVER (with CONNECT_API_KEY in ~/.Renviron).
+# Content running on Connect defaults to "connect" by itself. The talk uses a
+# versioned folder board so the demo runs on one laptop.
 Sys.setenv(INBOX_BOARD = "board")

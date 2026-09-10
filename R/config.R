@@ -41,14 +41,40 @@ inbox_provider <- function() {
   )
 }
 
-# The board is generated, not committed; prep/seed_demo_board.R rebuilds it.
+# Where the shared state lives. INBOX_BOARD is a folder path, or "connect" for
+# the Posit Connect board of the server in CONNECT_SERVER. Content running on
+# Connect defaults to "connect" by itself: the server sets RSTUDIO_PRODUCT,
+# CONNECT_SERVER and CONNECT_API_KEY for every piece of content it runs, so the
+# report, the apps and the seeding scripts all find the same board with nothing
+# configured. Anywhere else the default is the local folder board, which is
+# generated, not committed.
 inbox_board_path <- function() {
-  inbox_path(Sys.getenv("INBOX_BOARD", "board"))
+  on_connect <- identical(Sys.getenv("RSTUDIO_PRODUCT"), "CONNECT")
+  spec <- Sys.getenv("INBOX_BOARD", if (on_connect) "connect" else "board")
+  if (identical(spec, "connect")) return("connect")
+  if (startsWith(spec, "/") || startsWith(spec, "~")) path.expand(spec) else inbox_path(spec)
+}
+
+inbox_board <- function(path = inbox_board_path()) {
+  if (identical(path, "connect")) {
+    return(pins::board_connect(auth = "envvar", versioned = TRUE))
+  }
+  pins::board_folder(path, versioned = TRUE)
 }
 
 inbox_data_path <- function(...) inbox_path("data", ...)
 inbox_fixture_path <- function(...) inbox_path("fixtures", ...)
 inbox_artifact_path <- function(...) inbox_path("artifacts", ...)
+
+# Where the apps are published, for the links in the email. The server comes
+# from CONNECT_SERVER, which Connect sets for every piece of content it runs and
+# which stays out of the repository; the paths are the apps' vanity URLs. With
+# no server known there are no links, and the email says nothing about apps.
+inbox_app_url <- function(app = c("chat", "feedback")) {
+  server <- sub("/+$", "", Sys.getenv("CONNECT_SERVER"))
+  if (!nzchar(server)) return(NULL)
+  paste0(server, "/chickencloud_insight_", match.arg(app), "/")
+}
 
 # The fictitious company the generated data and the email header belong to.
 # Deliberately invented so no reader mistakes it for a real customer.
