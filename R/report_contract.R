@@ -8,12 +8,66 @@ report_object <- function(properties, description = NULL) {
   )
 }
 
-insight_schema <- function() {
+# An insight's kind is inferred from the field names of its evidence rows.
+#
+# Dispatching on shape rather than on a declared kind field is deliberate.
+# report_object() marks every property required with additionalProperties =
+# FALSE, so adding a field would change the serialisation of every existing
+# report, move its hash, and invalidate the captured human approvals that
+# reference it. Shape dispatch leaves them byte-identical.
+#
+# The cost is that the mapping is implicit, so it is pinned by tests: every kind
+# must have a distinct field set, and an unrecognised shape must be refused
+# rather than waved through.
+INSIGHT_EVIDENCE_FIELDS <- list(
+  cohort_conversion = c(
+    "cohort_month", "leads", "won", "conversion", "share_of_group_observed"
+  ),
+  segment_timing = c("segment", "leads", "measured_wins", "median_days_to_won"),
+  stage_progression = c("stage", "leads", "share_of_entered")
+)
+
+insight_kind <- function(insight) {
+  if (!is.list(insight$evidence) || !length(insight$evidence) ||
+      !is.list(insight$evidence[[1]]) || is.null(names(insight$evidence[[1]]))) {
+    # Let the schema produce the error, so malformed input keeps its old message.
+    return("cohort_conversion")
+  }
+  fields <- names(insight$evidence[[1]])
+  for (kind in names(INSIGHT_EVIDENCE_FIELDS)) {
+    if (setequal(fields, INSIGHT_EVIDENCE_FIELDS[[kind]])) return(kind)
+  }
+  stop(
+    "Unrecognised evidence shape: ", paste(fields, collapse = ", "),
+    ".\n  Evidence must match one of: ",
+    paste(names(INSIGHT_EVIDENCE_FIELDS), collapse = ", "), ".",
+    call. = FALSE
+  )
+}
+
+insight_schema <- function(kind = "cohort_conversion") {
   text <- list(type = "string", minLength = 1L)
   date <- list(type = "string", format = "date")
   period <- report_object(list(start = date, end = date))
   count <- list(type = "integer", minimum = 0L)
   share <- list(type = "number", minimum = 0, maximum = 1)
+  days <- list(type = "number", minimum = 0)
+
+  evidence_item <- switch(kind,
+    cohort_conversion = report_object(list(
+      cohort_month = date, leads = count, won = count,
+      conversion = share, share_of_group_observed = share
+    )),
+    segment_timing = report_object(list(
+      segment = text, leads = count, measured_wins = count,
+      median_days_to_won = days
+    )),
+    stage_progression = report_object(list(
+      stage = text, leads = count, share_of_entered = share
+    )),
+    stop("Unknown insight kind: ", kind, call. = FALSE)
+  )
+
   report_object(list(
     title = text,
     finding = text,
@@ -23,13 +77,7 @@ insight_schema <- function() {
     evidence_window = period,
     outcome_horizon = list(type = "string", enum = c("snapshot", "30_days")),
     metric_definition = text,
-    evidence = list(
-      type = "array", minItems = 1L,
-      items = report_object(list(
-        cohort_month = date, leads = count, won = count,
-        conversion = share, share_of_group_observed = share
-      ))
-    ),
+    evidence = list(type = "array", minItems = 1L, items = evidence_item),
     caveat = text,
     reproducible_code = text
   ), "One monthly cohort insight, with its time contract and reproducible evidence.")
@@ -222,9 +270,157 @@ worked_evidence <- function(snapshot, outcome_horizon) {
   ))
 }
 
+# --- Insights whose evidence is not monthly cohorts -------------------------
+
+# The two additional insights describe the funnel as a whole rather than one
+# month, so they use every complete entry month rather than the four the cohort
+# comparison uses.
+#
+# That is a correctness choice, not convenience. Restricting a duration measure
+# to recent months censors exactly what it measures: only the fast deals have
+# landed yet, so a short window makes slow segments look faster than they are.
+# Enterprise on the four-month window has two wins inside 30 days out of 575
+# leads, which is not evidence of anything.
+complete_months_contract <- function(snapshot) {
+  cutoff <- require_snapshot(snapshot)
+  current_month <- as.Date(format(cutoff, "%Y-%m-01"))
+  entries <- snapshot$entered_date[snapshot$cohort_month < current_month]
+  if (!length(entries)) {
+    stop("No complete entry months in the snapshot.", call. = FALSE)
+  }
+  list(
+    data_as_of = as.character(cutoff),
+    reporting_period = list(
+      start = as.character(cutoff - 27), end = as.character(cutoff)
+    ),
+    evidence_window = list(
+      start = as.character(min(entries)), end = as.character(max(entries))
+    )
+  )
+}
+
+complete_month_snapshot <- function(snapshot) {
+  cutoff <- require_snapshot(snapshot)
+  dplyr::filter(snapshot, cohort_month < as.Date(format(cutoff, "%Y-%m-01")))
+}
+
+segment_timing_evidence <- function(snapshot, insight = NULL) {
+  complete <- complete_month_snapshot(snapshot)
+  result <- dplyr::inner_join(
+    dplyr::count(complete, company_size, name = "leads"),
+    median_days_to(complete, "won", by = "company_size"),
+    by = "company_size"
+  )
+  lapply(seq_len(nrow(result)), function(i) list(
+    segment = result$company_size[i],
+    leads = result$leads[i],
+    measured_wins = result$eligible[i],
+    median_days_to_won = as.numeric(result$median_days[i])
+  ))
+}
+
+segment_timing_pipeline <- function(cutoff) {
+  paste0(
+    "snapshot |>\n",
+    "  filter(cohort_month < as.Date(\"", format(cutoff, "%Y-%m-01"), "\")) |>\n",
+    "  group_by(company_size) |>\n",
+    "  summarise(\n",
+    "    leads = n(),\n",
+    "    measured_wins = sum(use_for_time_to_won),\n",
+    "    median_days_to_won = median(days_to_won[use_for_time_to_won], na.rm = TRUE),\n",
+    "    .groups = \"drop\"\n",
+    "  ) |>\n",
+    "  rename(segment = company_size)"
+  )
+}
+
+segment_timing_code <- function(snapshot, insight = NULL) {
+  paste0(
+    worked_evidence_preamble(),
+    segment_timing_pipeline(require_snapshot(snapshot))
+  )
+}
+
+stage_progression_evidence <- function(snapshot, insight = NULL) {
+  result <- stage_funnel(complete_month_snapshot(snapshot))
+  entered <- result$leads[result$stage == "entered"]
+  lapply(seq_len(nrow(result)), function(i) list(
+    stage = as.character(result$stage[i]),
+    leads = result$leads[i],
+    share_of_entered = result$leads[i] / entered
+  ))
+}
+
+stage_progression_pipeline <- function(cutoff) {
+  paste0(
+    "counts <- snapshot |>\n",
+    "  filter(cohort_month < as.Date(\"", format(cutoff, "%Y-%m-01"), "\")) |>\n",
+    "  summarise(\n",
+    "    entered = n(),\n",
+    "    qualified = sum(!is.na(qualified_date)),\n",
+    "    opportunity = sum(!is.na(opportunity_date)),\n",
+    "    won = sum(won_as_of)\n",
+    "  )\n",
+    "\n",
+    "data.frame(\n",
+    "  stage = names(counts),\n",
+    "  leads = as.integer(unlist(counts)),\n",
+    "  share_of_entered = as.integer(unlist(counts)) / counts$entered\n",
+    ")"
+  )
+}
+
+stage_progression_code <- function(snapshot, insight = NULL) {
+  paste0(
+    worked_evidence_preamble(),
+    stage_progression_pipeline(require_snapshot(snapshot))
+  )
+}
+
+insight_kinds <- function() {
+  list(
+    cohort_conversion = list(
+      time_contract = worked_time_contract,
+      evidence = function(snapshot, insight) {
+        worked_evidence(snapshot, insight$outcome_horizon)
+      },
+      code = function(snapshot, insight) {
+        worked_evidence_code(snapshot, insight$outcome_horizon)
+      },
+      # The runnable half, without the placeholder preamble. Exposed so tests
+      # can execute it against a real snapshot; the preamble points at a board
+      # that deliberately does not exist.
+      pipeline = function(snapshot, insight) {
+        worked_evidence_pipeline(
+          worked_time_contract(snapshot)$months, insight$outcome_horizon
+        )
+      }
+    ),
+    segment_timing = list(
+      time_contract = complete_months_contract,
+      evidence = segment_timing_evidence,
+      code = segment_timing_code,
+      pipeline = function(snapshot, insight = NULL) {
+        segment_timing_pipeline(require_snapshot(snapshot))
+      }
+    ),
+    stage_progression = list(
+      time_contract = complete_months_contract,
+      evidence = stage_progression_evidence,
+      code = stage_progression_code,
+      pipeline = function(snapshot, insight = NULL) {
+        stage_progression_pipeline(require_snapshot(snapshot))
+      }
+    )
+  )
+}
+
 validate_insight <- function(insight, snapshot) {
-  validate_report_value(insight, insight_schema())
-  contract <- worked_time_contract(snapshot)
+  kind <- insight_kind(insight)
+  validate_report_value(insight, insight_schema(kind))
+  spec <- insight_kinds()[[kind]]
+
+  contract <- spec$time_contract(snapshot)
   for (field in c("data_as_of", "reporting_period", "evidence_window")) {
     actual <- insight[[field]]
     if (is.list(actual)) actual <- actual[names(contract[[field]])]
@@ -232,14 +428,15 @@ validate_insight <- function(insight, snapshot) {
       stop("Inconsistent ", field, ".", call. = FALSE)
     }
   }
-  expected <- worked_evidence(snapshot, insight$outcome_horizon)
+
+  expected <- spec$evidence(snapshot, insight)
   actual <- lapply(insight$evidence, function(row) row[names(expected[[1]])])
   if (!isTRUE(all.equal(actual, expected, tolerance = 1e-12))) {
     stop("Reported evidence does not reproduce from the snapshot.", call. = FALSE)
   }
   # Do not evaluate submitted code. This fixture path accepts the known recipe
   # expression only; a general REPL execution boundary belongs to the live branch.
-  if (!identical(insight$reproducible_code, worked_evidence_code(snapshot, insight$outcome_horizon))) {
+  if (!identical(insight$reproducible_code, spec$code(snapshot, insight))) {
     stop("Reproducible code must match the worked recipe expression.", call. = FALSE)
   }
   invisible(insight)
