@@ -80,6 +80,12 @@ code are not implemented yet, and the Connect capture still needs preparation.
 Fresh model generation on camera is not required; the current artifact build
 remains credential-free fixture replay.
 
+The correction sequence also requires the speaker to enter and submit feedback
+in a working app, show it saved as pending, and approve the standing rule
+separately. `apps/feedback/app.R` is not built yet; the existing static approval
+pages do not substitute for this interaction. The app can start from the current
+one-insight example and reuse the existing feedback/approval backend.
+
 ## The report contract
 
 `R/report_contract.R` defines the monthly-cohort insight schema, its local
