@@ -1,0 +1,340 @@
+---
+title: "ChickenCloud weekly insights"
+output:
+  html_document:
+    # The template is "<!DOCTYPE html>" and the body, nothing else, so the
+    # rendered document on Connect is the email itself rather than an rmarkdown
+    # page with the email nested inside it.
+    template: weekly-report.template.html
+    theme: null
+    highlight: null
+    mathjax: null
+---
+
+<!--
+The live report runner.
+
+This is the opt-in path: it calls a model, so it needs credentials and the
+mcp-repl binary, and it is never part of the default build. A clean clone still
+produces every talk artifact from the seeded generator with neither. deploy.R
+publishes it to Posit Connect with those two things supplied.
+
+What it does, in order: resolve the sandboxed REPL, write the snapshot to a
+scratch directory, give the model a REPL to look around and a form to hand in
+its answer, then deliver what it handed in -- labelled as a model's work,
+submitted for review.
+
+The evidence behind each headline is a table the model saved from its own REPL
+session. The runner checks that it is a well-formed table and takes the model's
+code as its account of how the table was made. Nothing is re-run. That is the
+same bargain the reference implementation strikes, and the reviewer, not the
+runner, is the check on whether a finding holds up.
+-->
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+# A Connect bundle has no .git or .Rproj for here() to find; anchor on this file.
+here::i_am("weekly-report.Rmd")
+
+library(dplyr)
+library(ellmer)
+library(mcptools)
+
+source(here::here("prep", "build_cohort.R"))
+source(here::here("R", "live_report.R"))
+source(here::here("R", "token_budget.R"))
+source(here::here("R", "email_preview.R"))
+```
+
+```{r check-repl}
+# Resolve the binary rather than assuming PATH. deploy.R bundles a Linux build
+# at bin/mcp-repl for Connect; locally that file is the wrong architecture, so
+# it is used only if it actually runs. The installer puts a local copy in
+# ~/.local/bin, which an Rmd render often does not inherit.
+repl_binary <- local({
+  bundled <- here::here("bin", "mcp-repl")
+  if (file.exists(bundled)) {
+    if (file.access(bundled, mode = 1L) != 0L) Sys.chmod(bundled, "0755")
+    runs <- suppressWarnings(system2(bundled, "--help", stdout = FALSE, stderr = FALSE))
+    if (identical(runs, 0L)) return(bundled)
+  }
+  found <- Sys.which("mcp-repl")[[1]]
+  if (nzchar(found)) return(found)
+  fallback <- path.expand("~/.local/bin/mcp-repl")
+  if (file.exists(fallback)) return(fallback)
+  stop(
+    "mcp-repl not found. Install it with:\n",
+    "  curl -fsSL https://raw.githubusercontent.com/posit-dev/mcp-repl/main/scripts/install.sh | sh",
+    call. = FALSE
+  )
+})
+```
+
+```{r config}
+# Provider and model come from INBOX_CHAT_PROVIDER and INBOX_CHAT_MODEL (see
+# config.example.R). Any provider ellmer knows will do; the API key belongs in
+# ~/.Renviron.
+PROVIDER <- inbox_provider()$provider
+MODEL <- inbox_provider()$model
+
+N_CANDIDATES <- 8L   # brainstormed before choosing
+N_HEADLINES <- 3L    # carried into the email
+
+# A REPL on a schedule is an open-ended loop with a bill attached. The notice
+# gives the model a chance to finish cleanly; the caps stop it regardless.
+# R/token_budget.R is where both are enforced.
+budget <- token_budget(input_cap = 1e6, output_cap = 1e5, warn_at = 0.8)
+
+OUTPUT_DIR <- inbox_artifact_path("live")
+dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r load-data}
+# The model sees funnel_snapshot() and nothing else. funnel_cohort carries
+# won_eventually, and a report built on hindsight would be worthless as a
+# demonstration even when the arithmetic checked out.
+snapshot <- funnel_snapshot(read_funnel_cohort())
+
+# One directory, one file. The REPL is spawned with this as its working
+# directory, so the workspace it may write to is this and not the repository,
+# and the tables it saves land where the runner can read them back.
+scratch <- file.path(tempdir(), paste0("inbox-repl-", Sys.getpid()))
+dir.create(scratch, recursive = TRUE, showWarnings = FALSE)
+saveRDS(snapshot, file.path(scratch, "snapshot.rds"))
+
+repl_config <- file.path(scratch, "mcp-repl.json")
+jsonlite::write_json(list(mcpServers = list(`r-repl` = list(
+  command = repl_binary,
+  args = list(
+    "--interpreter", "r",
+    "--sandbox", "workspace-write",
+    "--add-writable-root", scratch
+  )
+))), repl_config, auto_unbox = TRUE, pretty = TRUE)
+```
+
+```{r tools}
+# Two classes of capability, as the talk describes them: a REPL to look around,
+# and a form to hand in the answer. Everything else the model gets is context.
+staging <- new.env(parent = emptyenv())
+staging$candidates <- NULL
+staging$headlines <- vector("list", N_HEADLINES)
+staging$submitted <- FALSE
+
+submit_candidates <- ellmer::tool(
+  function(candidates) {
+    if (length(candidates) < N_HEADLINES) {
+      stop("Offer at least ", N_HEADLINES, " candidates before choosing.", call. = FALSE)
+    }
+    staging$candidates <- candidates
+    paste0("Recorded ", length(candidates), " candidates. Now develop ",
+      N_HEADLINES, " of them, one call each.")
+  },
+  description = paste(
+    "Record the shortlist of things worth investigating, before developing any",
+    "of them. Call once."
+  ),
+  arguments = list(candidates = ellmer::type_array(
+    items = ellmer::type_string("A one-line description of a question worth asking.")
+  )),
+  name = "submit_candidates"
+)
+
+submit_headline <- ellmer::tool(
+  function(slot, title, finding, suggested_action, metric_definition, caveat,
+           evidence_file, reproducible_code) {
+    if (is.null(staging$candidates)) {
+      stop("Record candidates before developing headlines.", call. = FALSE)
+    }
+    if (slot < 1 || slot > N_HEADLINES) {
+      stop("Slot must be between 1 and ", N_HEADLINES, ".", call. = FALSE)
+    }
+
+    insight <- list(
+      title = title, finding = finding, suggested_action = suggested_action,
+      metric_definition = metric_definition, caveat = caveat,
+      # The table the model saved from the REPL, read back from the directory
+      # the REPL was spawned in. The model never retypes its numbers.
+      evidence = read_live_evidence(scratch, evidence_file),
+      reproducible_code = reproducible_code
+    )
+
+    # Checked here rather than at the end, so the model is told immediately
+    # and can fix one headline instead of losing the whole run.
+    validate_live_insight(insight)
+    staging$headlines[[slot]] <- insight
+    paste0("Headline ", slot, " accepted with ",
+      length(insight$evidence$rows), " evidence rows.")
+  },
+  description = paste(
+    "Hand in one developed headline. Save its evidence table in the working",
+    "directory with saveRDS() first, then pass the file name."
+  ),
+  arguments = list(
+    slot = ellmer::type_integer("Which headline slot, 1-based."),
+    title = ellmer::type_string("Short headline."),
+    finding = ellmer::type_string("What the evidence shows, in one or two sentences."),
+    suggested_action = ellmer::type_string("A proportionate next step."),
+    metric_definition = ellmer::type_string("Exactly how the metric is computed."),
+    caveat = ellmer::type_string("What this evidence cannot establish."),
+    evidence_file = ellmer::type_string(paste(
+      "File name of the saved table, e.g. headline_1.rds: one data frame, first",
+      "column the row labels, every other column numeric, at most",
+      LIVE_EVIDENCE_MAX_ROWS, "rows."
+    )),
+    reproducible_code = ellmer::type_string(
+      "The R code that produced that exact table from `snapshot`."
+    )
+  ),
+  name = "submit_headline"
+)
+
+submit_report <- ellmer::tool(
+  function() {
+    missing <- which(vapply(staging$headlines, is.null, logical(1)))
+    if (length(missing)) {
+      stop("Headline slots still empty: ", paste(missing, collapse = ", "), ".", call. = FALSE)
+    }
+    staging$submitted <- TRUE
+    "Report submitted."
+  },
+  description = "Call once all headline slots are filled.",
+  arguments = list(),
+  name = "submit_report"
+)
+```
+
+```{r system-prompt}
+system_prompt <- paste(
+  "You write a weekly funnel report for ChickenCloud, a B2B SaaS company.",
+  "",
+  "You have a sandboxed R session. `snapshot.rds` in the working directory is a",
+  "point-in-time view of the lead funnel: one row per lead, with entry and stage",
+  "dates, durations, and dimensions assigned at entry. Load it with",
+  "`snapshot <- readRDS(\"snapshot.rds\")`.",
+  "",
+  "WORKFLOW",
+  paste0("1. Explore. 2. Call submit_candidates with at least ", N_CANDIDATES,
+    " questions worth asking. 3. Develop the ", N_HEADLINES,
+    " best with submit_headline, one call each. 4. Call submit_report."),
+  "",
+  "WHAT THE DATA WILL DO TO YOU IF YOU ARE CARELESS",
+  "- Recent cohorts have had less time to convert. Comparing conversion across",
+  "  cohorts of different ages shows a decline that is only delay. Compare over",
+  "  an equal window from entry, or say the newest cohort is incomplete.",
+  "- late_industry, late_deal_value and late_competitor are captured partway",
+  "  down the funnel and are blank for leads that stopped earlier. Grouping a",
+  "  full-funnel denominator by one of them silently changes the denominator.",
+  "- campaigns holds several values per lead. Splitting it before grouping",
+  "  counts a lead once per campaign. Report touches, not leads.",
+  "- Some stage dates were backfilled; the use_for_time_* flags say which are",
+  "  trustworthy for durations. A duration from a guessed date is fiction.",
+  "- won_as_of is what was known at the cutoff. There is no hindsight here and",
+  "  you should not imply any.",
+  "",
+  "EVIDENCE",
+  "Every headline rests on one small table. Compute it in the R session, then",
+  "save it in the working directory: `saveRDS(table, \"headline_1.rds\")`. One",
+  "data frame; the first column labels the rows, every other column is a",
+  paste0("number, and at most ", LIVE_EVIDENCE_MAX_ROWS, " rows. Pass the file name as evidence_file, and"),
+  "pass the code that produced that exact table from `snapshot` as",
+  "reproducible_code. The table and the code go into the email as you hand them",
+  "in, and a reader will run the code, so report only what you computed.",
+  "",
+  "Prefer a finding with a decision attached to one that is merely true.",
+  sep = "\n"
+)
+```
+
+```{r generate, include = FALSE}
+report <- NULL
+failure <- NULL
+
+result <- try({
+  # Spawn the REPL from the scratch directory so that its writable workspace is
+  # that directory rather than wherever this document happens to be rendered.
+  repl_tools <- withr::with_dir(scratch, mcptools::mcp_tools(config = repl_config))
+  if (!length(repl_tools)) stop("The REPL exposed no tools.", call. = FALSE)
+
+  chat <- ellmer::chat(
+    paste0(PROVIDER, "/", MODEL), system_prompt = system_prompt, echo = "none"
+  )
+
+  # Every tool, the REPL's included, is wrapped so the budget notice can reach
+  # the model. A tool result is the only channel back to it mid-run; the
+  # callback below can watch the meter but cannot change what the model sees.
+  chat$set_tools(lapply(
+    c(repl_tools, list(submit_candidates, submit_headline, submit_report)),
+    deliver_budget_notice, budget = budget
+  ))
+  chat$on_tool_result(function(result) {
+    check_token_budget(budget, chat$get_tokens())
+  })
+
+  chat$chat(paste0(
+    "Produce this week's report. Explore the snapshot, shortlist at least ",
+    N_CANDIDATES, " questions, then develop the ", N_HEADLINES, " best."
+  ))
+
+  if (!staging$submitted) {
+    stop("The model stopped without calling submit_report.", call. = FALSE)
+  }
+
+  report <- new_live_report(
+    insights = staging$headlines, snapshot = snapshot,
+    provider = PROVIDER, model = MODEL
+  )
+}, silent = TRUE)
+
+if (inherits(result, "try-error")) failure <- conditionMessage(attr(result, "condition"))
+```
+
+```{r output}
+failure_page <- function(message) {
+  tags <- htmltools::tags
+  tags$html(lang = "en",
+    tags$head(
+      tags$meta(charset = "utf-8"),
+      tags$title("No report this run"),
+      tags$style(htmltools::HTML(inbox_preview_css()))
+    ),
+    tags$body(tags$div(class = "sheet",
+      tags$h1("No report this run"),
+      tags$p("Generation failed and nothing was written."),
+      tags$pre(.noWS = "inside", tags$code(.noWS = "inside", message))
+    ))
+  )
+}
+
+# doRenderTags, not as.character: the latter hoists <head> out of the document
+# the way Shiny wants, which would leave the email and the page without CSS.
+if (is.null(failure)) {
+  page <- htmltools::doRenderTags(live_email_html(report, snapshot))
+  write_live_report(report, file.path(OUTPUT_DIR, "weekly_report_live.json"))
+  write_live_email_preview(report, snapshot, file.path(OUTPUT_DIR, "weekly-email-live.html"))
+  message("Wrote ", length(report$insights), " headlines to ", OUTPUT_DIR)
+
+  # On Connect this is the email that goes out; anywhere else the metadata is
+  # inert and the preview file is the deliverable.
+  rmarkdown::output_metadata$set(
+    rsc_email_subject = paste0(
+      INBOX_COMPANY, " weekly insights, data as of ", require_snapshot(snapshot)
+    ),
+    rsc_email_body_html = page
+  )
+} else {
+  # No partial email, and on Connect no email at all. A run that did not finish
+  # has nothing that should reach an inbox.
+  rmarkdown::output_metadata$set(rsc_email_suppress_scheduled = TRUE)
+  page <- htmltools::doRenderTags(failure_page(failure))
+}
+
+# A raw block passes through pandoc untouched, so with the bare template the
+# rendered document is exactly this HTML.
+knitr::raw_html(page)
+```
+
+```{r cleanup, include = FALSE}
+unlink(scratch, recursive = TRUE)
+```

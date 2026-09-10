@@ -22,10 +22,15 @@
 /artifacts/*
 !/artifacts/.gitkeep
 
+# the Linux mcp-repl that deploy.R fetches and bundles for Connect
+/bin/
+
 # quarto render output
 /.quarto/
 /inbox-insights.html
 /inbox-insights_files/
+/weekly-report.html
+/weekly-report-render-test.html
 
 # macOS
 .DS_Store

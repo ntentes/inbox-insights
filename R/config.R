@@ -37,7 +37,7 @@ inbox_is_live <- function() {
 inbox_provider <- function() {
   list(
     provider = Sys.getenv("INBOX_CHAT_PROVIDER", "anthropic"),
-    model = Sys.getenv("INBOX_CHAT_MODEL", "")
+    model = Sys.getenv("INBOX_CHAT_MODEL", "claude-sonnet-5")
   )
 }
 
