@@ -2,9 +2,11 @@ source(here::here("R", "report_contract.R"))
 
 GUIDANCE_PIN <- "demo-guidance"
 
-inbox_board <- function(path = inbox_board_path()) {
-  pins::board_folder(path, versioned = TRUE)
-}
+# The one rule approved before directives existed. The captured worked example
+# in fixtures/worked_example.json was approved and reviewed under it, and the
+# corrected report is built on the outcome horizon it carries, so it is still
+# read exactly as recorded. Nothing creates another one.
+WORKED_RULE_ID <- "incomplete-cohort-30-days-v1"
 
 approval_time <- function() {
   format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
@@ -19,21 +21,6 @@ validate_approval_time <- function(value) {
   invisible(value)
 }
 
-incomplete_cohort_rule <- function() {
-  list(
-    rule_id = "incomplete-cohort-30-days-v1",
-    text = paste(
-      "Compare monthly entry-to-won conversion over the same 30-day horizon:",
-      "include only leads observed for at least 30 days and count only wins",
-      "within 30 days of entry. Show the denominator and observed share.",
-      "If a whole monthly cohort is not yet observed for 30 days, label it",
-      "incomplete and omit its full-cohort comparison; do not substitute",
-      "only its oldest leads. Hindsight is not report evidence."
-    ),
-    outcome_horizon = "30_days"
-  )
-}
-
 feedback_schema <- function() {
   text <- list(type = "string")
   report_object(list(
@@ -42,12 +29,50 @@ feedback_schema <- function() {
   ))
 }
 
-approved_rule_schema <- function() {
+# A directive is a reviewer's correction, approved in the reviewer's words or as
+# the approver edited them, and from then on part of what every report and chat
+# is told. Its id is a hash of the approved text, so a directive edited after
+# approval is refused rather than quietly obeyed.
+directive_schema <- function() {
+  text <- list(type = "string")
+  report_object(list(
+    rule_id = text, text = text, source_feedback_id = text,
+    approved_by = text, approved_at = text
+  ))
+}
+
+worked_rule_schema <- function() {
   text <- list(type = "string")
   report_object(list(
     rule_id = text, text = text, outcome_horizon = text,
     source_feedback_id = text, approved_by = text, approved_at = text
   ))
+}
+
+directive_id <- function(text, source_feedback_id) {
+  paste0("directive-", report_hash(list(text = text, source_feedback_id = source_feedback_id)))
+}
+
+validate_rule <- function(rule, feedback) {
+  if (identical(rule$rule_id, WORKED_RULE_ID)) {
+    validate_report_value(rule, worked_rule_schema(), "worked rule")
+    if (!identical(rule$outcome_horizon, "30_days")) {
+      stop("The worked rule's outcome horizon is 30 days.", call. = FALSE)
+    }
+  } else {
+    validate_report_value(rule, directive_schema(), "directive")
+    if (!identical(rule$rule_id, directive_id(rule$text, rule$source_feedback_id))) {
+      stop("Directive text was edited after approval; approve it again.", call. = FALSE)
+    }
+  }
+  validate_approval_time(rule$approved_at)
+  ids <- vapply(feedback, `[[`, character(1), "feedback_id")
+  source_index <- match(rule$source_feedback_id, ids)
+  if (is.na(source_index)) stop("Rule source feedback is missing.", call. = FALSE)
+  if (rule$approved_at < feedback[[source_index]]$created_at) {
+    stop("Approval cannot precede its source feedback.", call. = FALSE)
+  }
+  invisible(rule)
 }
 
 validate_guidance <- function(state, snapshot) {
@@ -64,13 +89,11 @@ validate_guidance <- function(state, snapshot) {
   validate_report_value(state$feedback, list(
     type = "array", minItems = 0L, items = feedback_schema()
   ), "feedback")
-  validate_report_value(state$rules, list(
-    type = "array", minItems = 0L, items = approved_rule_schema()
-  ), "rules")
-  feedback_ids <- vapply(state$feedback, `[[`, character(1), "feedback_id")
-  if (anyDuplicated(feedback_ids) || length(state$rules) > 1L) {
-    stop("Duplicate feedback or multiple worked rules in guidance.", call. = FALSE)
+  if (!is.list(state$rules) || !is.null(names(state$rules))) {
+    stop("rules: expected an array.", call. = FALSE)
   }
+  feedback_ids <- vapply(state$feedback, `[[`, character(1), "feedback_id")
+  if (anyDuplicated(feedback_ids)) stop("Duplicate feedback in guidance.", call. = FALSE)
   for (entry in state$feedback) {
     validate_approval_time(entry$created_at)
     expected_id <- paste0("feedback-", report_hash(entry[setdiff(names(entry), "feedback_id")]))
@@ -80,18 +103,9 @@ validate_guidance <- function(state, snapshot) {
       stop("Feedback does not match its recorded source report.", call. = FALSE)
     }
   }
-  for (rule in state$rules) {
-    validate_approval_time(rule$approved_at)
-    expected <- incomplete_cohort_rule()
-    if (!identical(rule[names(expected)], expected)) {
-      stop("This slice supports only the canonical incomplete-cohort rule.", call. = FALSE)
-    }
-    source_index <- match(rule$source_feedback_id, feedback_ids)
-    if (is.na(source_index)) stop("Rule source feedback is missing.", call. = FALSE)
-    if (rule$approved_at < state$feedback[[source_index]]$created_at) {
-      stop("Approval cannot precede its source feedback.", call. = FALSE)
-    }
-  }
+  for (rule in state$rules) validate_rule(rule, state$feedback)
+  rule_ids <- vapply(state$rules, `[[`, character(1), "rule_id")
+  if (anyDuplicated(rule_ids)) stop("Duplicate rules in guidance.", call. = FALSE)
   invisible(state)
 }
 
@@ -144,24 +158,32 @@ record_feedback <- function(board, snapshot, text, author, created_at = approval
   entry
 }
 
-approve_incomplete_cohort_rule <- function(board, snapshot, feedback_id, approver,
-                                         expected_state_id, approved_at = approval_time()) {
+# The separate human action. The directive's text defaults to the correction's
+# own words; an approver who edits them approves the edited text, and the id
+# records which. The state hash ties the approval to what the approver saw.
+approve_directive <- function(board, snapshot, feedback_id, approver, expected_state_id,
+                              text = NULL, approved_at = approval_time()) {
   validate_report_value(approver, list(type = "string"), "approver")
   validate_approval_time(approved_at)
   state <- read_guidance(board, snapshot)
   if (!identical(report_hash(state), expected_state_id)) {
     stop("Guidance changed since it was displayed; review it again before approval.", call. = FALSE)
   }
-  if (length(state$rules)) stop("The worked rule is already approved.", call. = FALSE)
   ids <- vapply(state$feedback, `[[`, character(1), "feedback_id")
   if (!is.character(feedback_id) || length(feedback_id) != 1L || is.na(feedback_id) ||
       !feedback_id %in% ids) {
     stop("Select one existing source feedback entry.", call. = FALSE)
   }
-  rule <- c(incomplete_cohort_rule(), list(
+  if (is.null(text)) text <- state$feedback[[match(feedback_id, ids)]]$text
+  validate_report_value(text, list(type = "string"), "directive text")
+  rule <- list(
+    rule_id = directive_id(text, feedback_id), text = text,
     source_feedback_id = feedback_id, approved_by = approver, approved_at = approved_at
-  ))
-  state$rules <- list(rule)
+  )
+  if (rule$rule_id %in% vapply(state$rules, `[[`, character(1), "rule_id")) {
+    stop("This directive is already approved.", call. = FALSE)
+  }
+  state$rules <- append(state$rules, list(rule))
   write_guidance(board, state, snapshot)
   rule
 }
