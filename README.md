@@ -1,200 +1,202 @@
-# inbox-insights
+# Inbox Insights with ellmer and Posit Connect
 
-Materials for the posit::conf(2026) talk **Inbox Insights with ellmer and Posit
-Connect**. The fictitious company is **ChickenCloud**, a B2B SaaS company selling
-workflow software to other businesses. All data is generated from a fixed seed;
-no company data or production artifacts are included.
+The proof of concept behind the posit::conf(2026) talk of the same name, by
+Konstantinos Ntentes, Senior Data Scientist at Posit.
 
-The implementation is in progress. Fixture mode is the default and makes no model
-calls. The initial report is an **authored, deliberately misleading teaching
-example**, not a captured agent run or a recommended analysis.
+A model writes a weekly funnel report for **ChickenCloud**, a fictitious B2B
+SaaS company, and Posit Connect emails it. Readers reply through two Shiny apps:
+a feedback app that turns a reviewer's correction into a standing directive the
+next report must follow, and a chat app that answers questions about the report
+from the same data, with the same rules, in a sandboxed R session. The three
+pieces never call each other. They coordinate through pins on the Connect
+server, which is the point of the talk: the report, the corrections and the
+conversation are one system because they share state, not because they share a
+process.
 
-For the fictional sales process, column definitions, collection timing, and the
-reason behind each correction, read the
-[generated-data dictionary](data-dictionary.md). It distinguishes invented
-business explanations from the actual data and metric contracts.
+Everything here is synthetic. The data comes from a seeded generator, the
+company does not exist, and the model's output is labelled as a model's output,
+submitted for review and not reviewed.
 
-The ChickenCloud logo is an original cloud-shaped cartoon of Chicken, the
-speaker's dog. Editable artwork is in `images/chickencloud-logo.svg`; the
-transparent `images/chickencloud-logo.png` is its committed raster export for
-light backgrounds. Both email previews embed the PNG so they remain standalone.
-The supplied reference picture is not included. These previews do not send mail;
-actual email delivery will need an email-compatible image attachment or hosting
-strategy rather than relying on browser support for data URLs.
+## The loop
 
-## Build the current artifacts
+```
+                          seeded generator
+                                │
+                     data/funnel_cohort.csv ──► funnel_snapshot()  (no hindsight)
+                                                       │
+                                     ┌─────────────────┴──────────────────┐
+                                     │  pins on Connect (one board)       │
+                                     │  funnel-snapshot   the data        │
+                                     │  weekly-headlines  what was said   │
+                                     │  demo-guidance     what was approved
+                                     └───┬────────────────┬───────────┬───┘
+                                         │                │           │
+      weekly-report.Rmd ◄────────────────┘   apps/feedback│  apps/chat│
+      ellmer + mcp-repl, scheduled            corrections ─┘  questions┘
+      ─► email via rsc_email_body_html        ─► directives    ─► answers computed
+      ─► weekly-headlines                                        in R, with plots
+```
 
-Use R 4.5.0 and restore the pinned packages with `renv::restore()`. From the
-project root:
+**The report** (`weekly-report.Rmd`) gives a model a sandboxed R session over a
+frozen snapshot of the funnel, the house recipes for the calculations the
+business relies on, the approved directives, and the headlines of earlier runs.
+It asks for candidate questions, three developed headlines, and a submitted
+report. Each headline rests on a table the model saved from its own session; the
+runner checks the table's shape, the schema and that the code parses, and does
+not re-run it. On success the email goes out and the headlines are pinned. On
+failure nothing is sent and the page shows the whole conversation.
+
+**The feedback app** (`apps/feedback/app.R`) opens on the latest headlines. A
+reader writes a correction about one of them; it is saved as pending feedback
+and changes nothing. A reviewer then approves it as a directive, in the
+reviewer's words or edited, bound to the exact state the reviewer was shown.
+From the next run on, every report and chat is given the directive.
+
+**The chat app** (`apps/chat/app.R`) is a thin interface over the same
+accumulated state, not a second AI system: the same snapshot, recipes,
+directives and headlines go into its prompt, each session gets its own
+`mcp-repl`, and it can save a plot from that session and show it inline.
+
+## Repository layout
+
+```
+weekly-report.Rmd            the scheduled report: prompt, tools, budget, email
+weekly-report.template.html  a doctype and the body: the Connect page is the email
+deploy.R                     publishes all three to Connect, pins the snapshot
+
+apps/chat/app.R              the chat app
+apps/feedback/app.R          the feedback and directive-approval app
+
+R/config.R                   paths, the board factory, provider, app URLs
+R/snapshot.R                 the snapshot contract: cutoff stamped and verified
+R/recipes.R                  the house recipes for conversion, timing, funnel, reach
+R/report_contract.R          report envelope, validators, headline metrics
+R/live_report.R              a model's report: evidence tables, limits, formatting
+R/live_session.R             what report and chat share: REPL, prompts, transcript
+R/headline_history.R         the weekly-headlines pin and the prompt built from it
+R/snapshot_pin.R             the funnel-snapshot pin
+R/feedback.R                 guidance state: feedback, directives, approvals
+R/context_archive.R          what the model may know: definitions and directives
+R/token_budget.R             caps and the wrap-up notice for an unattended run
+R/email_preview.R            the one email layout, page and mail alike
+R/theme.R                    palette, stylesheet, inline styles, Shiny theme
+R/charts.R                   evidence charts for the authored report kinds
+
+prep/generate_data.R         the seeded generator -> data/funnel_raw.csv
+prep/build_cohort.R          raw -> data/funnel_cohort.csv, and funnel_snapshot()
+prep/build_initial_report.R  the first-run report the guidance state starts from
+
+images/chickencloud-logo.png the logo, embedded in the email and the apps
+config.example.R             the settings, with working defaults
+renv.lock, renv/, .Rprofile  the pinned R packages
+```
+
+`data/`, `board/`, `artifacts/` and `bin/` are generated and ignored. The talk
+material this was built alongside is not part of this repository.
+
+## Running it
+
+R 4.5 and `renv::restore()`. Then, in `~/.Renviron`:
+
+```
+ANTHROPIC_API_KEY=...      # the report and the chat call Anthropic through ellmer
+CONNECT_SERVER=https://... # your Connect server; also builds the app links in the email
+CONNECT_API_KEY=...        # a key for the publishing account
+```
+
+Build the data, once:
 
 ```sh
 Rscript prep/generate_data.R
-Rscript prep/validate_data.R
 Rscript prep/build_cohort.R
-Rscript prep/build_initial_report.R
-Rscript prep/build_as_of_chart.R
-Rscript prep/build_worked_example.R
-Rscript prep/build_weekly_report.R
 ```
 
-The first three commands rebuild the synthetic data. The report and chart builders
-regenerate `fixtures/initial_bad_report.json` and the two explanatory panels.
-The worked-example builder replays the captured approvals in
-`fixtures/worked_example.json`, seeds the local board, and builds the plain
-worked example. The weekly builder then writes both versions of the
-three-insight email and their fixtures. No credentials are needed. Run the
-scripts with `Rscript`: sourcing them loads functions but does not build their
-outputs.
+For local runs, install `mcp-repl`
+(`curl -fsSL https://raw.githubusercontent.com/posit-dev/mcp-repl/main/scripts/install.sh | sh`).
+Locally the board is a versioned folder at `board/`; set `INBOX_BOARD` to use
+another folder, or `INBOX_BOARD=connect` to use the Connect board from your
+laptop.
 
-Open these local files in a browser:
+```r
+rmarkdown::render("weekly-report.Rmd")   # one live run; calls the model
+shiny::runApp("apps/feedback")
+shiny::runApp("apps/chat")
+```
 
-| File | What it shows |
-|---|---|
-| `artifacts/initial-report.html` | Deliberately misleading first-run finding |
-| `artifacts/approval.html` | Authored correction, captured human approvals, and the archive transition |
-| `artifacts/approval-slide.html` | Compact correction, approval, and saved-rule view for slide 5; links to the full audit replay |
-| `artifacts/corrected-report.html` | One reviewed corrected insight, in the same email layout |
-| `artifacts/first-run-email.html` | The three-insight weekly email as the first run produced it |
-| `artifacts/weekly-email.html` | The same email after the approved correction; only the lead insight differs |
-| `artifacts/corrected-report.json` | Full insight, evidence, reproducible code, and context references |
-| `artifacts/context-archive.json` | The canonical approved generation context |
-| `artifacts/report-review.json` | Human review bound to that exact corrected report |
-| `artifacts/as-of-conversion.png` | Snapshot versus eventual conversion; hindsight is explanatory only |
-| `artifacts/equal-30-day-conversion.png` | Snapshot-only equal-horizon comparison with full denominators |
+## Deploying
 
-Each chart also exports an aggregate CSV alongside its PNG. The first chart
-contains hindsight and must never become report or chat input. The equal-horizon
-chart omits partly observed cohorts rather than presenting only their oldest leads.
+```sh
+Rscript deploy.R              # report, chat, feedback, then pins the snapshot
+Rscript deploy.R report       # or: chat, feedback
+```
 
-For the slide scaffold, install the Quarto CLI separately (the talk uses
-1.10.18), then run `quarto render inbox-insights.qmd`. The pinned `quarto` R
-package does not install the CLI. The notes are recording prompts, not a script.
-Open `inbox-insights.html` in a browser to inspect the current scaffold. The embedded views
-are presentation excerpts; use the standalone files above for full evidence,
-code, and approval metadata.
+The script fetches the Linux `mcp-repl` release into `bin/`, bundles each piece
+with the code it sources, registers your server with rsconnect, copies
+`ANTHROPIC_API_KEY` into the report's and the chat's environment, and finally
+pins the snapshot so the apps have data before the report has run. On Connect
+nothing is configured: the server supplies `RSTUDIO_PRODUCT`, `CONNECT_SERVER`
+and `CONNECT_API_KEY`, so all three pieces find the same board and the email
+knows where the apps live.
 
-The deck is the **first-take scaffold**, not the final slides. The telling has
-been recorded and transcribed; its script edit will replace the current order
-and prompts. The final talk targets **19-20 minutes**, with a 19:30 working budget
-including reading time, clips, and pauses.
+Then, on Connect: run the report once and set its schedule and recipients; open
+the feedback app and initialize the guidance state from the first-run report
+(that approves nothing); open the chat.
 
-The revised scope includes actual ellmer/mcp-repl wiring, a snapshot-data handoff,
-a brief pointer to token-limit logic in the report runner, and a scheduling/access
-walkthrough on a pre-deployed Connect report. The wiring, handoff and token
-limits live in `weekly-report.Rmd` (see [The live runner](#the-live-runner));
-the Connect capture still needs preparation. Fresh model generation on camera is
-not required; the default artifact build remains credential-free fixture replay.
+The `mcp-repl` release is pinned in `deploy.R` to one whose Linux sandbox runs
+inside a Connect container and whose protocol the current mcptools speaks; if
+you change the pin, delete `bin/mcp-repl` so the next deploy fetches the new
+build, and watch the first run's log.
 
-The correction sequence also requires the speaker to enter and submit feedback
-in a working app, show it saved as pending, and approve the standing rule
-separately. `apps/feedback/app.R` is not built yet; the existing static approval
-pages do not substitute for this interaction. The app can start from the current
-one-insight example and reuse the existing feedback/approval backend.
+## What keeps the model honest
 
-## The report contract
-
-`R/report_contract.R` defines the monthly-cohort insight schema, its local
-validation, and `submit_insight_tool(snapshot, on_submit)` for ellmer. Tool
-submission means **submitted for review**, not permission to publish.
-
-Reporting period, evidence window, data cutoff, and outcome horizon are separate
-fields. The worked report covers 28 calendar days through 2026-06-30 and uses
-February-May entry cohorts as explicitly historical evidence. Report inputs are
-snapshots, not the full cohort table with hindsight.
-
-The envelope records an authored-fixture provenance label and a SHA-256 snapshot
-identity. Validation reproduces the evidence with the house recipes and rejects
-different data, inconsistent time fields, and undeclared fields.
-
-## Approval and shared context
-
-`R/feedback.R` persists a versioned guidance state on a local folder board.
-Initialize it explicitly with the source report and snapshot, then use
-`record_feedback()` to add a correction. Recording feedback does not approve it.
-
-`approve_incomplete_cohort_rule()` is the separate human action. It requires a
-selected feedback ID, approver, and the hash of the state that was displayed.
-The saved rule retains the source feedback and approval time. A stale displayed
-state is rejected rather than approved silently.
-
-`R/context_archive.R` is the single context builder. It reads the persisted state
-and includes definitions and approved rules, never pending feedback or the
-misleading source-report prose. The rule and original report survive restarting
-the process; exported archives are accepted only when they match current state.
-
-The correction was authored by Copilot; the speaker explicitly approved the rule
-and reviewed the corrected report. The fixture preserves their actual attribution
-and UTC timestamps. Rebuilding **replays captured approvals**; it does not perform
-new human reviews. The HTML sequence is a static replay, not a recording of an app.
-
-`R/corrected_report.R` consumes the approved archive and uses its 30-day horizon.
-`review_corrected_report()` is a second, explicit human action bound to the exact
-report hash. `require_report_review()` refuses absent reviews, changed content,
-unreproducible evidence, and mismatched rule, archive, or snapshot references.
-The worked-example builder applies this gate before writing its outputs.
-
-`R/worked_example.R` validates captured approvals before seeding. Existing board
-state that differs is rejected, never silently reset to the fixture. For an
-independent rebuild, use `INBOX_BOARD=board/replay Rscript prep/build_worked_example.R`.
-For a new correction, use a separate board, `initialize_guidance()`, and
-`record_feedback()`; inspect the rule before `approve_incomplete_cohort_rule()`,
-then inspect the report before `review_corrected_report()`. Only after those human
-actions can `capture_worked_fixture()` export a replacement reviewed fixture.
-
-The ChickenCloud rename changes synthetic identifiers and campaign/competitor
-labels, not simulated dates, outcomes, or deal values. The current fixture captures
-fresh rule and report approvals for the renamed example. Older local boards are
-bound to the earlier snapshot: preserve them separately or choose a fresh
-`INBOX_BOARD` rather than rewriting their saved approvals.
-
-## The live runner
-
-`weekly-report.Rmd` is the opt-in path that calls a model. It is not part of the
-build above and needs two things a clean clone does not have: the `mcp-repl`
-binary and provider credentials, chosen through `INBOX_CHAT_PROVIDER` and
-`INBOX_CHAT_MODEL` (see `config.example.R`; the API key belongs in `~/.Renviron`).
-
-It writes `funnel_snapshot()` to a scratch directory, spawns a sandboxed R REPL
-there, and gives the model that REPL plus three form tools: shortlist candidate
-questions, hand in a developed headline, submit the report. A headline's evidence
-is a data frame the model saves from its own session with `saveRDS()`; the tool
-takes the file name and the code the model says produced it. `R/live_report.R`
-checks the table is well formed, the insight fits the schema, and the code
-parses. It does not re-run the code. The result is labelled `live_model_run`,
-submitted for review, and written to `artifacts/live/`. On Connect the email is
-delivered through `rsc_email_body_html` and suppressed when the run fails.
-
-`R/token_budget.R` holds the caps for an unattended run: past a threshold the
-next tool result carries a notice asking the model to wrap up; past either cap
-the run aborts and nothing is written.
-
-The document renders through `weekly-report.template.html`, which is a doctype
-and the body and nothing else, so the page Connect shows is the same HTML as
-the email it sends. `Rscript deploy.R` publishes it: it fetches the Linux
-`mcp-repl` release into `bin/` (gitignored), bundles the Rmd with the R files it
-sources, `data/funnel_cohort.csv` and the logo, registers the server named in
-`CONNECT_SERVER` with `CONNECT_API_KEY`, and copies `ANTHROPIC_API_KEY` into the
-content's environment. Schedule and recipients are set in Connect afterwards.
-The Connect host needs glibc 2.35 or newer for the `mcp-repl` release.
+- **The snapshot contract.** The model sees `funnel_snapshot()`, a point-in-time
+  view with every date censored at the cutoff and the cutoff stamped on the
+  table twice. Hindsight is not in the data it is given.
+- **The house recipes.** `R/recipes.R` is copied into the sandbox and the model
+  is told to use it for conversion, durations, the funnel and campaign reach, so
+  its numbers are computed the way the business computes them. The code it
+  hands in must still be plain dplyr against the pinned snapshot, because that
+  is all a reader has.
+- **Evidence as a file.** A headline's table is what the model saved with
+  `saveRDS()`, read back by the runner; the model never retypes its numbers. At
+  most three value columns and forty rows, so it fits an email. Money is shown
+  in dollars, shares as percentages, counts whole, by column name.
+- **Directives, not prose.** Pending feedback never reaches a prompt.
+  `context_archive()` is the one place that decides what the model may know:
+  the definitions and the approved directives, each with who approved it and
+  when, its id a hash of its text so a directive edited afterwards is refused.
+- **Memory of what was said.** Each run appends its headlines to the
+  `weekly-headlines` pin and reads the last four runs back, with instructions
+  not to repeat them and to say so when building on one.
+- **A budget and a record.** Input, output and tool-call caps end a runaway run;
+  past a threshold the next tool result asks the model to wrap up. Every tool
+  call is logged to the Connect job log, and a run that ends without a report
+  prints the entire conversation on its page.
+- **One email, two deliveries.** The rendered page and the mailed body are the
+  same HTML: every style inline, tables where the browser would have used flex,
+  and the logo as a CID attachment, because mail clients drop `<style>` blocks
+  and `data:` images.
 
 ## Deliberate simplifications
 
-The authored contract covers the three fixture insight kinds, not arbitrary
-analysis types. Its reproducible-code field must match the known recipe
-expression; submitted code is never evaluated. The live runner accepts any table
-shape and, like the reference implementation it follows, does not re-execute the
-model's code; the human reviewer is the check on the finding.
+This is a proof of concept. The model's code is checked for syntax and taken as
+its account of the table, not re-executed. A directive's text is approved as
+written, with no check that it is sound; the approver is that check. Pins are
+read and written without locking, and a folder board orders same-second
+versions by hash, which real weekly runs never hit. Access is whatever Connect
+grants; identity in the apps is Connect's `session$user`. The email is built for
+Gmail and Outlook on the web; Outlook for Windows will show it plainer.
 
-Numerical validation does not establish that an interpretation or suggested action
-is sound. The initial fixture demonstrates exactly that distinction. Human review
-is still needed, and an authored fixture is not evidence of model compliance.
+## Configuration
 
-The approval slice supports one canonical incomplete-cohort rule and assumes one
-local writer. The stale-state guard is not a multi-process transaction or access
-control. Attribution is self-reported, not authenticated Connect identity.
-The folder board uses flat pin names `demo-guidance` and `demo-report-review` because this backend
-rejects slashes; deployed board naming and concurrency need their own adapter.
-The current archive contains shared definitions and the worked rule, not report
-history or a chat interface. The fixture emails are authored, not model output;
-the live runner's email is a model's submission and is never written to
-`fixtures/`. No email is sent by the build scripts.
+| Variable | Default | What it does |
+|---|---|---|
+| `INBOX_BOARD` | `board` locally, `connect` on Connect | folder path, or `connect` for the Connect board |
+| `INBOX_CHAT_PROVIDER`, `INBOX_CHAT_MODEL` | `anthropic`, `claude-sonnet-5` | any provider ellmer knows; the key goes in `~/.Renviron` |
+| `INBOX_REPL_SANDBOX` | `workspace-write` | mcp-repl's sandbox mode |
+| `CONNECT_SERVER`, `CONNECT_API_KEY` | set by Connect for its content | the board, and the app links in the email |
+| `ANTHROPIC_API_KEY` | | copied to the report and the chat by `deploy.R` |
+
+## License
+
+See `LICENSE`.

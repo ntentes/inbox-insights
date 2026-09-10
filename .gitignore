@@ -1,36 +1,74 @@
-# roborev snapshots
-/.roborev/
+# This repository is the deployable proof of concept and nothing else: the
+# report, the two apps, the code they source, and what a clone needs to build
+# the data and deploy. Everything not listed below is ignored, so talk material,
+# generated artifacts, local boards, credentials and deployment records stay
+# out. deploy.R's shared_files() names the same code files; keep the two lists
+# in step.
 
-# Planning material. Never committed. The talk plan contains the section 6.6
-# scrub table, which maps real internal terms to their talk equivalents, so
-# publishing it would leak exactly the vocabulary the scrub exists to remove.
-/planning/
+/*
 
-# local configuration and secrets -- never commit these
+# Project
+!/.gitignore
+!/.Rprofile
+!/README.md
+!/LICENSE
+!/config.example.R
+!/renv.lock
+!/renv/
+/renv/*
+!/renv/.gitignore
+!/renv/activate.R
+!/renv/settings.json
+
+# The report and how it is published
+!/weekly-report.Rmd
+!/weekly-report.template.html
+!/deploy.R
+
+# The apps
+!/apps/
+/apps/*
+!/apps/chat/
+!/apps/feedback/
+
+# The code all three source
+!/R/
+/R/*
+!/R/charts.R
+!/R/config.R
+!/R/context_archive.R
+!/R/email_preview.R
+!/R/feedback.R
+!/R/headline_history.R
+!/R/live_report.R
+!/R/live_session.R
+!/R/recipes.R
+!/R/report_contract.R
+!/R/snapshot.R
+!/R/snapshot_pin.R
+!/R/theme.R
+!/R/token_budget.R
+
+# The data generator and the first-run report the feedback app starts from
+!/prep/
+/prep/*
+!/prep/generate_data.R
+!/prep/build_cohort.R
+!/prep/build_initial_report.R
+
+# The logo the email and the apps open with
+!/images/
+/images/*
+!/images/chickencloud-logo.png
+
+# Never, at any depth: local configuration, credentials, rsconnect deployment
+# records (they carry the Connect server URL and account), and OS litter.
 /config.R
-.Renviron
+/.Renviron
 .Rhistory
 .RData
 .Rproj.user/
-
-# renv: the lockfile is committed and the library is restored from it. The
-# library/staging paths are ignored by renv/.gitignore, which renv maintains.
-
-# everything below is rebuilt by prep/build_all.R from the seeded generator
-/data/
-/board/
-/artifacts/*
-!/artifacts/.gitkeep
-
-# the Linux mcp-repl that deploy.R fetches and bundles for Connect
-/bin/
-
-# quarto render output
-/.quarto/
-/inbox-insights.html
-/inbox-insights_files/
-/weekly-report.html
-/weekly-report-render-test.html
-
-# macOS
+rsconnect/
+*.dcf
+manifest.json
 .DS_Store
