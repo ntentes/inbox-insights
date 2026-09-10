@@ -1,5 +1,22 @@
 source(here::here("R", "report_contract.R"))
 source(here::here("R", "theme.R"))
+source(here::here("R", "charts.R"))
+
+# Render the report's evidence chart and embed it, so the preview is one
+# self-contained file with nothing to hotlink.
+#
+# Note this makes the HTML bytes machine-dependent, the same way the stills are:
+# the embedded PNG depends on the local font rendering. Nothing asserts the
+# bytes of either.
+insight_chart_uri <- function(insight) {
+  path <- tempfile(fileext = ".png")
+  on.exit(unlink(path), add = TRUE)
+  ggplot2::ggsave(
+    path, insight_evidence_chart(insight),
+    width = 7.2, height = 2.9, dpi = 150, bg = INBOX_PALETTE$page
+  )
+  base64enc::dataURI(file = path, mime = "image/png")
+}
 
 # The rendered email.
 #
@@ -78,6 +95,15 @@ example_email_html <- function(report, snapshot) {
               ". These historical cohorts are separate from the reporting period."
             )),
             tags$p(insight$metric_definition),
+            # Drawn from insight$evidence, which validate_insight() has already
+            # checked reproduces from the snapshot. The chart and the table
+            # below it are therefore the same numbers by construction rather
+            # than by agreement.
+            tags$img(
+              class = "chart",
+              src = insight_chart_uri(insight),
+              alt = insight_evidence_alt(insight)
+            ),
             tags$table(
               tags$caption(if (insight$outcome_horizon == "30_days") {
                 "Wins within 30 days of entry; every lead observed for at least 30 days."
@@ -98,7 +124,7 @@ example_email_html <- function(report, snapshot) {
 
             tags$h3(class = "label", "Reproduce the evidence"),
             tags$p(class = "muted small",
-              "Using the same frozen snapshot and the house recipes in R/recipes.R:"
+              "Against the same frozen snapshot, using only dplyr and pins:"
             ),
             # .noWS is load-bearing here. htmltools indents child tags, and
             # inside a <pre> that indentation is content -- it rendered the

@@ -118,15 +118,85 @@ worked_time_contract <- function(snapshot) {
   )
 }
 
+# The snippet the email tells the reader to run.
+#
+# It has to work for somebody who has the data and none of this repo. The
+# earlier version called cohort_conversion() and snapshot_cutoff(), which live
+# in R/recipes.R -- so "reproduce the evidence" meant "clone our repository
+# first", which is not reproducibility, it is an advertisement.
+#
+# So the snippet now loads its own libraries, reads the snapshot from a pin the
+# reader points at, and does the arithmetic in plain dplyr. Spelling the metric
+# out longhand is a side benefit: the definition stops being something you have
+# to take on trust from a function name.
+#
+# Split into a preamble and a pipeline because the pipeline is executed in
+# tests/testthat/test-report-contract.R and checked against the evidence it
+# claims to produce. The preamble cannot be executed -- it points at a board
+# that does not exist -- and an untested snippet in an email headed "reproduce
+# the evidence" is exactly the kind of claim this repo is not supposed to make.
+worked_evidence_preamble <- function() {
+  paste(
+    "# Reproduce the table above from the same frozen snapshot.",
+    "# Point these two lines at your own board and pin, then run the rest as is.",
+    "library(dplyr)",
+    "library(pins)",
+    "",
+    "board <- board_folder(\"path/to/your/board\")",
+    "snapshot <- pin_read(board, \"funnel-snapshot\")",
+    "",
+    "",
+    sep = "\n"
+  )
+}
+
+worked_evidence_pipeline <- function(months, outcome_horizon) {
+  window <- paste0(
+    "snapshot |>\n",
+    "  filter(\n",
+    "    cohort_month >= as.Date(\"", months[1], "\"),\n",
+    "    cohort_month <= as.Date(\"", months[4], "\")\n",
+    "  ) |>\n",
+    "  group_by(cohort_month) |>\n"
+  )
+
+  switch(outcome_horizon,
+    snapshot = paste0(
+      window,
+      "  summarise(\n",
+      "    leads = n(),\n",
+      "    won = sum(won_as_of),\n",
+      "    conversion = mean(won_as_of),\n",
+      "    share_of_group_observed = 1,\n",
+      "    .groups = \"drop\"\n",
+      "  )"
+    ),
+    `30_days` = paste0(
+      window,
+      "  summarise(\n",
+      "    cohort_leads = n(),\n",
+      "    leads = sum(observation_age_days >= 30),\n",
+      "    won = sum(\n",
+      "      observation_age_days >= 30 & won_as_of &\n",
+      "        !is.na(days_to_won) & days_to_won <= 30\n",
+      "    ),\n",
+      "    .groups = \"drop\"\n",
+      "  ) |>\n",
+      "  mutate(\n",
+      "    conversion = won / leads,\n",
+      "    share_of_group_observed = leads / cohort_leads\n",
+      "  ) |>\n",
+      "  select(cohort_month, leads, won, conversion, share_of_group_observed)"
+    ),
+    stop("Unsupported outcome horizon.", call. = FALSE)
+  )
+}
+
 worked_evidence_code <- function(snapshot, outcome_horizon) {
   contract <- worked_time_contract(snapshot)
-  days <- switch(outcome_horizon, snapshot = "NULL", `30_days` = "30",
-    stop("Unsupported outcome horizon.", call. = FALSE))
   paste0(
-    "cohort_conversion(snapshot, within_days = ", days,
-    ", as_of = snapshot_cutoff(snapshot)) |>\n",
-    "  dplyr::filter(cohort_month >= as.Date(\"", contract$months[1],
-    "\"), cohort_month <= as.Date(\"", contract$months[4], "\"))"
+    worked_evidence_preamble(),
+    worked_evidence_pipeline(contract$months, outcome_horizon)
   )
 }
 
