@@ -3,6 +3,13 @@
 The proof of concept behind the posit::conf(2026) talk of the same name, by
 Konstantinos Ntentes, Senior Data Scientist at Posit.
 
+This architecture highlights one strategy of many to use when crowdsourcing an
+informal context archive for use by the data agents in your organization. This
+strategy is particularly useful if you don't have access to formal context
+management with your tools. This example works with a single view, but can be
+modified to work with multiple views by explaining the join relationship in the
+context archive.
+
 A model writes a weekly funnel report for
 <img src="images/chickencloud-logo-inline.png" alt="ChickenCloud" height="32" align="absmiddle">,
 a fictitious B2B SaaS company, and Posit Connect emails it. Readers reply through two Shiny apps:
