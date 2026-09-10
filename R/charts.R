@@ -64,6 +64,78 @@ equal_30_day_chart_data <- function(snapshot) {
     dplyr::arrange(cohort_month)
 }
 
+# A small chart of a report's own evidence, for embedding in the email.
+#
+# It draws from insight$evidence rather than recomputing from the snapshot, and
+# that is the whole design. validate_insight() already asserts those rows
+# reproduce from the snapshot, so the chart cannot disagree with the table
+# printed beside it, and it cannot contain anything the report did not have --
+# there is no path here through which hindsight could arrive.
+#
+# Which is the point. The explanatory chart on slide 7 plots won_eventually and
+# is tagged explanatory_only_not_for_reports; it must never appear inside a
+# report. This one is structurally incapable of showing that.
+insight_evidence_chart <- function(insight) {
+  pal <- inbox_chart_colours()
+  data <- do.call(rbind, lapply(insight$evidence, function(row) {
+    data.frame(
+      cohort_month = as.Date(row$cohort_month),
+      conversion = row$conversion,
+      leads = row$leads,
+      won = row$won
+    )
+  }))
+  latest <- max(data$cohort_month)
+
+  ggplot2::ggplot(data, ggplot2::aes(cohort_month, conversion)) +
+    ggplot2::geom_rect(
+      data = data.frame(cohort_month = latest),
+      ggplot2::aes(xmin = cohort_month - 13, xmax = cohort_month + 13, ymin = -Inf, ymax = Inf),
+      inherit.aes = FALSE, fill = pal$highlight, alpha = 0.25
+    ) +
+    ggplot2::geom_line(ggplot2::aes(group = 1), colour = pal$primary, linewidth = 0.7) +
+    ggplot2::geom_point(colour = pal$primary, size = 2.1) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = sprintf("%.1f%%", 100 * conversion)),
+      nudge_y = max(data$conversion) * 0.09, size = 3.6, colour = pal$text
+    ) +
+    ggplot2::scale_x_date(
+      breaks = data$cohort_month, date_labels = "%b %Y",
+      expand = ggplot2::expansion(add = 19)
+    ) +
+    ggplot2::scale_y_continuous(
+      labels = function(x) sprintf("%.0f%%", 100 * x),
+      limits = c(0, max(data$conversion) * 1.22),
+      expand = ggplot2::expansion(mult = c(0, 0))
+    ) +
+    ggplot2::labs(
+      x = NULL,
+      y = if (insight$outcome_horizon == "30_days") {
+        "Wins within 30 days"
+      } else {
+        "Wins known at the cutoff"
+      }
+    ) +
+    inbox_theme_ggplot(base_size = 12) +
+    ggplot2::theme(plot.margin = ggplot2::margin(6, 10, 2, 4))
+}
+
+# Alt text built from the same rows, so a screen reader gets the figures rather
+# than being told there is a chart.
+insight_evidence_alt <- function(insight) {
+  parts <- vapply(insight$evidence, function(row) {
+    sprintf("%s %.1f%%", format(as.Date(row$cohort_month), "%Y-%m"), 100 * row$conversion)
+  }, character(1))
+  paste0(
+    if (insight$outcome_horizon == "30_days") {
+      "Conversion within 30 days of entry by entry month: "
+    } else {
+      "Conversion known at the cutoff by entry month: "
+    },
+    paste(parts, collapse = ", "), "."
+  )
+}
+
 chart_count <- function(x) {
   format(x, big.mark = ",", scientific = FALSE, trim = TRUE)
 }

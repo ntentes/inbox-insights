@@ -133,6 +133,9 @@ inbox_preview_css <- function(max_width = "820px") {
     ".callout p:last-child { margin-bottom: 0; }",
     sprintf(".callout-quiet { border-left-color: %s; }", p$rule_strong),
 
+    # Embedded figures
+    ".chart { display: block; width: 100%; height: auto; margin: 10px 0 2px; }",
+
     # Code
     sprintf("pre { background: %s; border: 1px solid %s; border-radius: 4px;", p$code_surface, p$rule),
     "  padding: 14px 16px; overflow-x: auto; }",
