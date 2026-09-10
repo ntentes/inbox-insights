@@ -70,10 +70,13 @@ example_email_html <- function(report, snapshot) {
             ),
 
             tags$h3(class = "label", "Historical cohort evidence"),
-            tags$p(class = "muted small",
+            # Built with paste0 rather than as separate children: htmltools puts
+            # each child on its own line, and the browser renders that newline
+            # as a space, which lands a gap before the full stop.
+            tags$p(class = "muted small", paste0(
               "Entry dates: ", period(insight$evidence_window),
               ". These historical cohorts are separate from the reporting period."
-            ),
+            )),
             tags$p(insight$metric_definition),
             tags$table(
               tags$caption(if (insight$outcome_horizon == "30_days") {
@@ -97,7 +100,12 @@ example_email_html <- function(report, snapshot) {
             tags$p(class = "muted small",
               "Using the same frozen snapshot and the house recipes in R/recipes.R:"
             ),
-            tags$pre(tags$code(insight$reproducible_code))
+            # .noWS is load-bearing here. htmltools indents child tags, and
+            # inside a <pre> that indentation is content -- it rendered the
+            # first line of the snippet pushed halfway across the block.
+            tags$pre(.noWS = "inside",
+              tags$code(.noWS = "inside", insight$reproducible_code)
+            )
           )
         ),
         tags$footer(
