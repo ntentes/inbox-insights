@@ -60,6 +60,7 @@
 !/images/
 /images/*
 !/images/chickencloud-logo.png
+!/images/chickencloud-logo-inline.png
 !/images/weekly-email.png
 
 # Never, at any depth: local configuration, credentials, rsconnect deployment
