@@ -56,10 +56,11 @@
 !/prep/build_cohort.R
 !/prep/build_initial_report.R
 
-# The logo the email and the apps open with
+# The logo the email and the apps open with, and the README's picture of the email
 !/images/
 /images/*
 !/images/chickencloud-logo.png
+!/images/weekly-email.png
 
 # Never, at any depth: local configuration, credentials, rsconnect deployment
 # records (they carry the Connect server URL and account), and OS litter.

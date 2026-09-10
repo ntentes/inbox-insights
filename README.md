@@ -1,5 +1,9 @@
 # Inbox Insights with ellmer and Posit Connect
 
+<p align="center">
+  <img src="images/chickencloud-logo.png" alt="ChickenCloud" width="240">
+</p>
+
 The proof of concept behind the posit::conf(2026) talk of the same name, by
 Konstantinos Ntentes, Senior Data Scientist at Posit.
 
@@ -9,13 +13,18 @@ a feedback app that turns a reviewer's correction into a standing directive the
 next report must follow, and a chat app that answers questions about the report
 from the same data, with the same rules, in a sandboxed R session. The three
 pieces never call each other. They coordinate through pins on the Connect
-server, which is the point of the talk: the report, the corrections and the
-conversation are one system because they share state, not because they share a
-process.
+server.
 
-Everything here is synthetic. The data comes from a seeded generator, the
-company does not exist, and the model's output is labelled as a model's output,
-submitted for review and not reviewed.
+<p align="center">
+  <img src="images/weekly-email.png" alt="The top of the weekly email: the ChickenCloud masthead, four counts for the reporting period, links to the chat and feedback apps, and the first headline with its chart and evidence table." width="560">
+</p>
+
+<p align="center"><sub>The top of one weekly email, as it lands in the inbox and
+as Connect renders it: the same HTML.</sub></p>
+
+ChickenCloud sells a cloud platform, and its mascot is a cloud-shaped
+goldendoodle named Chicken. Neither the company, the leads nor the deals exist;
+the data is generated from a seed, so every artifact here can be rebuilt.
 
 ## The loop
 
@@ -94,7 +103,7 @@ renv.lock, renv/, .Rprofile  the pinned R packages
 `data/`, `board/`, `artifacts/` and `bin/` are generated and ignored. The talk
 material this was built alongside is not part of this repository.
 
-## Running it
+## Running it locally
 
 R 4.5 and `renv::restore()`. Then, in `~/.Renviron`:
 
@@ -123,7 +132,7 @@ shiny::runApp("apps/feedback")
 shiny::runApp("apps/chat")
 ```
 
-## Deploying
+## Deploying to Posit Connect
 
 ```sh
 Rscript deploy.R              # report, chat, feedback, then pins the snapshot
@@ -147,24 +156,18 @@ inside a Connect container and whose protocol the current mcptools speaks; if
 you change the pin, delete `bin/mcp-repl` so the next deploy fetches the new
 build, and watch the first run's log.
 
-## What keeps the model honest
+## What keeps the report useful
 
-- **The snapshot contract.** The model sees `funnel_snapshot()`, a point-in-time
-  view with every date censored at the cutoff and the cutoff stamped on the
-  table twice. Hindsight is not in the data it is given.
 - **The house recipes.** `R/recipes.R` is copied into the sandbox and the model
   is told to use it for conversion, durations, the funnel and campaign reach, so
   its numbers are computed the way the business computes them. The code it
   hands in must still be plain dplyr against the pinned snapshot, because that
   is all a reader has.
-- **Evidence as a file.** A headline's table is what the model saved with
-  `saveRDS()`, read back by the runner; the model never retypes its numbers. At
-  most three value columns and forty rows, so it fits an email. Money is shown
-  in dollars, shares as percentages, counts whole, by column name.
-- **Directives, not prose.** Pending feedback never reaches a prompt.
-  `context_archive()` is the one place that decides what the model may know:
-  the definitions and the approved directives, each with who approved it and
-  when, its id a hash of its text so a directive edited afterwards is refused.
+- **Directives, not prose.** `context_archive()` is the one place that decides
+  what the model may know: the initial definitions and the approved directives
+  from the feedback app, each with who approved it and when, its id a hash of
+  its text so a directive edited afterwards is refused. Feedback must be
+  approved by the maintainer before it reaches the next prompt.
 - **Memory of what was said.** Each run appends its headlines to the
   `weekly-headlines` pin and reads the last four runs back, with instructions
   not to repeat them and to say so when building on one.
@@ -172,20 +175,6 @@ build, and watch the first run's log.
   past a threshold the next tool result asks the model to wrap up. Every tool
   call is logged to the Connect job log, and a run that ends without a report
   prints the entire conversation on its page.
-- **One email, two deliveries.** The rendered page and the mailed body are the
-  same HTML: every style inline, tables where the browser would have used flex,
-  and the logo as a CID attachment, because mail clients drop `<style>` blocks
-  and `data:` images.
-
-## Deliberate simplifications
-
-This is a proof of concept. The model's code is checked for syntax and taken as
-its account of the table, not re-executed. A directive's text is approved as
-written, with no check that it is sound; the approver is that check. Pins are
-read and written without locking, and a folder board orders same-second
-versions by hash, which real weekly runs never hit. Access is whatever Connect
-grants; identity in the apps is Connect's `session$user`. The email is built for
-Gmail and Outlook on the web; Outlook for Windows will show it plainer.
 
 ## Configuration
 
@@ -195,7 +184,7 @@ Gmail and Outlook on the web; Outlook for Windows will show it plainer.
 | `INBOX_CHAT_PROVIDER`, `INBOX_CHAT_MODEL` | `anthropic`, `claude-sonnet-5` | any provider ellmer knows; the key goes in `~/.Renviron` |
 | `INBOX_REPL_SANDBOX` | `workspace-write` | mcp-repl's sandbox mode |
 | `CONNECT_SERVER`, `CONNECT_API_KEY` | set by Connect for its content | the board, and the app links in the email |
-| `ANTHROPIC_API_KEY` | | copied to the report and the chat by `deploy.R` |
+| `ANTHROPIC_API_KEY` | | copied to the report and the chat by `deploy.R`; easily swapped for another provider's key, or for Ollama locally |
 
 ## License
 
