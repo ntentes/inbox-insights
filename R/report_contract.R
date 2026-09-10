@@ -528,7 +528,11 @@ read_example_report <- function(path, snapshot) {
 # `insights` to the single-insight report would change its serialisation, move
 # its hash, and invalidate the captured human approvals that reference it. The
 # two share every other field and all of the per-insight validation.
+# Two versions of the same email: what the first run produced, and what it
+# produced after the correction was approved. Only the lead insight differs, so
+# the change the rule made is the change the reader sees.
 WEEKLY_REPORT_PURPOSE <- "weekly_email"
+WEEKLY_FIRST_RUN_PURPOSE <- "weekly_email_first_run"
 
 validate_weekly_report <- function(report, snapshot) {
   fields <- c("schema_version", "report_id", "purpose", "company", "snapshot_id",
@@ -540,8 +544,9 @@ validate_weekly_report <- function(report, snapshot) {
   text <- list(type = "string")
   validate_report_value(report$report_id, text, "report_id")
   validate_report_value(report$purpose, list(
-    type = "string", enum = WEEKLY_REPORT_PURPOSE
+    type = "string", enum = c(WEEKLY_REPORT_PURPOSE, WEEKLY_FIRST_RUN_PURPOSE)
   ), "purpose")
+  corrected <- identical(report$purpose, WEEKLY_REPORT_PURPOSE)
   validate_report_value(report$provenance, report_object(list(
     kind = list(type = "string", enum = "authored_fixture"), author = text, note = text
   )), "provenance")
@@ -553,18 +558,30 @@ validate_weekly_report <- function(report, snapshot) {
     stop("Report version, company, or snapshot identity does not match.", call. = FALSE)
   }
 
-  # A weekly email is the output the standing rule exists to govern, so it may
-  # not be built without naming the rule and the archive it came from.
-  if (is.null(report$archive_id) || !length(report$applied_rule_ids)) {
-    stop(
-      "A weekly email must reference the approved rule and its archive.",
-      call. = FALSE
-    )
+  # A corrected weekly email is the output the standing rule governs, so it may
+  # not be built without naming the rule and the archive it came from. The
+  # first-run version must claim the opposite just as strictly: it predates the
+  # approval, and an email that implied otherwise would misrepresent the loop.
+  if (corrected) {
+    if (is.null(report$archive_id) || !length(report$applied_rule_ids)) {
+      stop(
+        "A weekly email must reference the approved rule and its archive.",
+        call. = FALSE
+      )
+    }
+    validate_report_value(report$archive_id, text, "archive_id")
+    validate_report_value(report$applied_rule_ids, list(
+      type = "array", minItems = 1L, items = text
+    ), "applied_rule_ids")
+  } else {
+    if (!is.null(report$archive_id) || length(report$applied_rule_ids)) {
+      stop(
+        "A first-run weekly email cannot reference a rule or archive; ",
+        "it precedes the approval.",
+        call. = FALSE
+      )
+    }
   }
-  validate_report_value(report$archive_id, text, "archive_id")
-  validate_report_value(report$applied_rule_ids, list(
-    type = "array", minItems = 1L, items = text
-  ), "applied_rule_ids")
 
   if (!is.list(report$insights) || length(report$insights) < 1L) {
     stop("A weekly email needs at least one insight.", call. = FALSE)
@@ -577,12 +594,14 @@ validate_weekly_report <- function(report, snapshot) {
       call. = FALSE
     )
   }
-  # The corrected cohort comparison leads, because it is the one the approved
-  # rule changed. An email that buried it would not demonstrate the rule.
+  # The cohort comparison leads in both versions, because it is the one the
+  # approved rule changed. An email that buried it would not show the change.
+  expected_horizon <- if (corrected) "30_days" else "snapshot"
   if (!identical(kinds[[1]], "cohort_conversion") ||
-      !identical(report$insights[[1]]$outcome_horizon, "30_days")) {
+      !identical(report$insights[[1]]$outcome_horizon, expected_horizon)) {
     stop(
-      "The weekly email must lead with the corrected equal-window cohort insight.",
+      "The weekly email must lead with the cohort insight on the ",
+      expected_horizon, " horizon.",
       call. = FALSE
     )
   }
@@ -590,11 +609,13 @@ validate_weekly_report <- function(report, snapshot) {
   invisible(report)
 }
 
-new_weekly_report <- function(insights, snapshot, archive, applied_rule_ids,
+new_weekly_report <- function(insights, snapshot, archive = NULL,
+                              applied_rule_ids = list(),
+                              purpose = WEEKLY_REPORT_PURPOSE,
                               report_id = "weekly-report") {
   result <- list(
     schema_version = 1L, report_id = report_id,
-    purpose = WEEKLY_REPORT_PURPOSE, company = INBOX_COMPANY,
+    purpose = purpose, company = INBOX_COMPANY,
     snapshot_id = report_snapshot_id(snapshot),
     provenance = list(
       kind = "authored_fixture", author = "Copilot",

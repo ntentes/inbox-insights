@@ -21,7 +21,8 @@ insight_chart_uri <- function(insight) {
 email_version_label <- function(purpose) {
   switch(purpose,
     teaching_example = "First-run teaching example",
-    weekly_email = "Weekly report",
+    weekly_email_first_run = "First run, before the correction",
+    weekly_email = "After the approved correction",
     "Corrected preview"
   )
 }
