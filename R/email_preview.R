@@ -23,6 +23,7 @@ email_version_label <- function(purpose) {
     teaching_example = "First-run teaching example",
     weekly_email_first_run = "First run, before the correction",
     weekly_email = "After the approved correction",
+    weekly_email_live = "Live model run",
     "Corrected preview"
   )
 }
@@ -51,11 +52,14 @@ email_header <- function(report, lead_insight) {
       "Reporting period: ", email_period(lead_insight$reporting_period), " (28 days)"
     ),
     tags$p(class = "muted small",
-      if (identical(report$purpose, "teaching_example")) {
-        "Authored teaching example; not a captured model run."
-      } else {
+      switch(report$purpose,
+        teaching_example = "Authored teaching example; not a captured model run.",
+        weekly_email_live = paste(
+          "Live model run; not an authored example.",
+          "Submitted for review, not reviewed."
+        ),
         "Authored example; not a captured model run."
-      }
+      )
     )
   )
 }
@@ -175,10 +179,85 @@ email_insight_section <- function(insight) {
   )
 }
 
+# A live insight's evidence has whatever shape the model chose, so it gets a
+# generic table and no chart. Charting an arbitrary table without knowing what
+# the columns mean would be decoration standing in for understanding.
+#
+# The caption and the code heading are worded for what actually happened: the
+# table is the one the model saved from its session, and the code is what it
+# said produced it. Neither was re-run by the runner.
+live_insight_section <- function(insight) {
+  tags <- htmltools::tags
+  evidence <- insight$evidence
+  columns <- unlist(evidence$value_columns)
+  number <- function(x) {
+    format(round(as.numeric(x), 4), big.mark = ",", trim = TRUE, scientific = FALSE)
+  }
+
+  tags$section(class = "insight",
+    tags$h2(insight$title),
+    tags$p(insight$finding),
+    tags$div(class = "callout",
+      tags$p(tags$strong("Suggested action. "), insight$suggested_action)
+    ),
+    tags$h3(class = "label", "Evidence"),
+    tags$p(insight$metric_definition),
+    tags$table(
+      tags$caption(paste(
+        "The table the model saved from its sandboxed session against the",
+        "frozen snapshot, shown as submitted."
+      )),
+      tags$thead(tags$tr(
+        tags$th(scope = "col", evidence$label_column),
+        lapply(columns, function(name) tags$th(scope = "col", name))
+      )),
+      tags$tbody(lapply(evidence$rows, function(row) {
+        tags$tr(
+          tags$th(scope = "row", row$label),
+          lapply(unlist(row$values), function(v) tags$td(number(v)))
+        )
+      }))
+    ),
+    tags$div(class = "callout callout-quiet",
+      tags$p(tags$strong("Caveat. "), insight$caveat)
+    ),
+    tags$h3(class = "label", "Reproduce the evidence"),
+    tags$p(class = "muted small",
+      "The model's account of how the table above was produced from `snapshot`:"
+    ),
+    tags$pre(.noWS = "inside",
+      tags$code(.noWS = "inside", insight$reproducible_code)
+    )
+  )
+}
+
+live_email_html <- function(report, snapshot) {
+  lead <- list(
+    data_as_of = as.character(require_snapshot(snapshot)),
+    reporting_period = worked_time_contract(snapshot)$reporting_period
+  )
+  email_document(
+    report, lead,
+    lapply(report$insights, live_insight_section),
+    email_stat_strip(report$headline_metrics, headline_metric_windows(snapshot))
+  )
+}
+
+write_live_email_preview <- function(report, snapshot, path) {
+  write_preview_html(live_email_html(report, snapshot), path)
+}
+
 email_footer <- function(report) {
   tags <- htmltools::tags
   tags$footer(
     tags$p("Preview only. ", report$provenance$note),
+    if (identical(report$provenance$kind, "live_model_run")) {
+      tags$p(
+        "Written by ", report$provenance$model,
+        " via ", report$provenance$provider,
+        " at ", report$provenance$generated_at, "."
+      )
+    },
     tags$p("Report: ", report$report_id),
     tags$p("Snapshot: ", report$snapshot_id),
     if (!is.null(report$archive_id)) tags$p("Context archive: ", report$archive_id),
