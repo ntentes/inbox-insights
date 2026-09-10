@@ -522,6 +522,89 @@ read_example_report <- function(path, snapshot) {
   report
 }
 
+# --- Headline metrics -------------------------------------------------------
+
+# Counts of events dated inside the reporting period, against the 28 days
+# before it.
+#
+# These are the only numbers in the email with no interpretation attached, which
+# is the point of putting them at the top: everything above the insights is
+# arithmetic the reader can redo, everything below is a claim about it.
+#
+# They are counts of events in a closed window, never a cohort rate. That
+# distinction is what keeps them out of the trap the rest of the email is about:
+# both windows are entirely in the past, so both are fully observed and the
+# comparison is between equals. A conversion rate here would be the same mistake
+# the first-run email makes, printed in a bigger font.
+HEADLINE_METRIC_LABELS <- c(
+  "Leads entered", "Qualified", "Opportunities", "Deals won"
+)
+
+headline_metric_windows <- function(snapshot) {
+  contract <- worked_time_contract(snapshot)
+  start <- as.Date(contract$reporting_period$start)
+  end <- as.Date(contract$reporting_period$end)
+  list(start = start, end = end, prior_start = start - 28, prior_end = start - 1)
+}
+
+headline_metrics <- function(snapshot) {
+  w <- headline_metric_windows(snapshot)
+  columns <- list(
+    snapshot$entered_date, snapshot$qualified_date,
+    snapshot$opportunity_date, snapshot$won_date
+  )
+  count_between <- function(dates, from, to) {
+    sum(!is.na(dates) & dates >= from & dates <= to)
+  }
+  lapply(seq_along(HEADLINE_METRIC_LABELS), function(i) list(
+    metric = HEADLINE_METRIC_LABELS[[i]],
+    value = count_between(columns[[i]], w$start, w$end),
+    previous_value = count_between(columns[[i]], w$prior_start, w$prior_end)
+  ))
+}
+
+headline_metrics_pipeline <- function(w) {
+  paste0(
+    "this_period <- function(d) {\n",
+    "  sum(!is.na(d) & d >= as.Date(\"", w$start, "\") & d <= as.Date(\"", w$end, "\"))\n",
+    "}\n",
+    "previous_period <- function(d) {\n",
+    "  sum(!is.na(d) & d >= as.Date(\"", w$prior_start,
+    "\") & d <= as.Date(\"", w$prior_end, "\"))\n",
+    "}\n",
+    "\n",
+    "with(snapshot, data.frame(\n",
+    "  metric = c(\"", paste(HEADLINE_METRIC_LABELS, collapse = "\", \""), "\"),\n",
+    "  value = c(\n",
+    "    this_period(entered_date), this_period(qualified_date),\n",
+    "    this_period(opportunity_date), this_period(won_date)\n",
+    "  ),\n",
+    "  previous_value = c(\n",
+    "    previous_period(entered_date), previous_period(qualified_date),\n",
+    "    previous_period(opportunity_date), previous_period(won_date)\n",
+    "  )\n",
+    "))"
+  )
+}
+
+headline_metrics_code <- function(snapshot) {
+  paste0(
+    worked_evidence_preamble(),
+    headline_metrics_pipeline(headline_metric_windows(snapshot))
+  )
+}
+
+headline_metrics_schema <- function() {
+  list(
+    type = "array", minItems = 1L,
+    items = report_object(list(
+      metric = list(type = "string", minLength = 1L),
+      value = list(type = "integer", minimum = 0L),
+      previous_value = list(type = "integer", minimum = 0L)
+    ))
+  )
+}
+
 # --- The weekly email: several insights in one envelope ---------------------
 
 # A separate envelope rather than a plural field on the existing one. Adding
@@ -536,7 +619,7 @@ WEEKLY_FIRST_RUN_PURPOSE <- "weekly_email_first_run"
 
 validate_weekly_report <- function(report, snapshot) {
   fields <- c("schema_version", "report_id", "purpose", "company", "snapshot_id",
-    "provenance", "archive_id", "applied_rule_ids", "insights")
+    "provenance", "archive_id", "applied_rule_ids", "headline_metrics", "insights")
   if (!is.list(report) || anyDuplicated(names(report)) ||
       !setequal(names(report), fields)) {
     stop("Invalid weekly report envelope fields.", call. = FALSE)
@@ -583,6 +666,19 @@ validate_weekly_report <- function(report, snapshot) {
     }
   }
 
+  # The headline metrics are held to the same standard as the evidence: they
+  # must reproduce from the snapshot, or they do not go in the email.
+  validate_report_value(
+    report$headline_metrics, headline_metrics_schema(), "headline_metrics"
+  )
+  expected_metrics <- headline_metrics(snapshot)
+  actual_metrics <- lapply(
+    report$headline_metrics, function(row) row[names(expected_metrics[[1]])]
+  )
+  if (!isTRUE(all.equal(actual_metrics, expected_metrics, tolerance = 1e-12))) {
+    stop("Headline metrics do not reproduce from the snapshot.", call. = FALSE)
+  }
+
   if (!is.list(report$insights) || length(report$insights) < 1L) {
     stop("A weekly email needs at least one insight.", call. = FALSE)
   }
@@ -623,6 +719,7 @@ new_weekly_report <- function(insights, snapshot, archive = NULL,
     ),
     archive_id = archive$archive_id,
     applied_rule_ids = applied_rule_ids,
+    headline_metrics = headline_metrics(snapshot),
     insights = insights
   )
   validate_weekly_report(result, snapshot)

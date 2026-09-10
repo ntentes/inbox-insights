@@ -133,6 +133,19 @@ inbox_preview_css <- function(max_width = "820px") {
     ".callout p:last-child { margin-bottom: 0; }",
     sprintf(".callout-quiet { border-left-color: %s; }", p$rule_strong),
 
+    # The deterministic headline strip. Counts only, and deliberately not
+    # colour-coded: a red -12% would assert a problem the insights below argue
+    # you cannot conclude from a snapshot.
+    ".stats { display: flex; gap: 10px; margin: 26px 0 6px; }",
+    sprintf(".stat { flex: 1; background: %s; border: 1px solid %s;", p$surface, p$rule),
+    "  border-radius: 4px; padding: 12px 14px; }",
+    sprintf(".stat .k { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;"),
+    sprintf("  text-transform: uppercase; color: %s; }", p$muted),
+    sprintf(".stat .v { font-size: 25px; font-weight: 600; line-height: 1.25;"),
+    sprintf("  color: %s; font-variant-numeric: tabular-nums; }", p$ink),
+    sprintf(".stat .d { font-size: 12.5px; color: %s;", p$muted),
+    "  font-variant-numeric: tabular-nums; }",
+
     # Successive insights in the weekly email. A rule and generous space rather
     # than a card, so three insights read as one letter and not three notices.
     sprintf(".insight + .insight { border-top: 1px solid %s;", INBOX_PALETTE$rule),

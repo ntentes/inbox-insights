@@ -188,7 +188,39 @@ email_footer <- function(report) {
   )
 }
 
-email_document <- function(report, lead_insight, sections) {
+# The deterministic strip: what happened in the reporting period, counted.
+#
+# No interpretation, no rate, no colour. Everything above the insights is
+# arithmetic the reader can redo; everything below is a claim about it.
+email_stat_strip <- function(metrics, windows) {
+  tags <- htmltools::tags
+  count <- function(x) format(x, big.mark = ",", scientific = FALSE, trim = TRUE)
+
+  htmltools::tagList(
+    tags$div(class = "stats", lapply(metrics, function(row) {
+      change <- if (row$previous_value > 0) {
+        sprintf("%+.0f%%", 100 * (row$value / row$previous_value - 1))
+      } else {
+        "n/a"
+      }
+      tags$div(class = "stat",
+        tags$div(class = "k", row$metric),
+        tags$div(class = "v", count(row$value)),
+        tags$div(class = "d", change, " vs ", count(row$previous_value), " prior")
+      )
+    })),
+    tags$p(class = "muted small", paste0(
+      "Events dated in the reporting period, against the 28 days before it ",
+      "(", windows$prior_start, " to ", windows$prior_end, "). ",
+      "Both windows are closed, so both are fully counted. ",
+      "Counts, not conversion rates: a rate across cohorts of different ages ",
+      "is the mistake this report exists to avoid. A small number of stage ",
+      "dates were backfilled and are counted at their estimated date."
+    ))
+  )
+}
+
+email_document <- function(report, lead_insight, sections, metrics = NULL) {
   tags <- htmltools::tags
   tags$html(lang = "en",
     tags$head(
@@ -202,6 +234,7 @@ email_document <- function(report, lead_insight, sections) {
     tags$body(
       tags$div(class = "sheet",
         email_header(report, lead_insight),
+        metrics,
         tags$main(sections),
         email_footer(report)
       )
@@ -219,7 +252,9 @@ example_email_html <- function(report, snapshot) {
 weekly_email_html <- function(report, snapshot) {
   validate_weekly_report(report, snapshot)
   email_document(
-    report, report$insights[[1]], lapply(report$insights, email_insight_section)
+    report, report$insights[[1]],
+    lapply(report$insights, email_insight_section),
+    email_stat_strip(report$headline_metrics, headline_metric_windows(snapshot))
   )
 }
 
