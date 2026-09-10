@@ -18,133 +18,207 @@ insight_chart_uri <- function(insight) {
   base64enc::dataURI(file = path, mime = "image/png")
 }
 
-# The rendered email.
-#
-# Structure carries the hierarchy: a masthead, then the finding, then the
-# evidence it rests on, then the caveat, then the code to reproduce it. Small
-# uppercase labels open each section so the reader can find the evidence without
-# reading the prose, which is the whole point of showing your work.
-#
-# All styling comes from inbox_preview_css() so the email, the approval replays
-# and the charts cannot drift apart.
-example_email_html <- function(report, snapshot) {
-  validate_example_report(report, snapshot)
+email_version_label <- function(purpose) {
+  switch(purpose,
+    teaching_example = "First-run teaching example",
+    weekly_email = "Weekly report",
+    "Corrected preview"
+  )
+}
+
+email_period <- function(value) paste(value$start, "through", value$end)
+
+# The masthead and the lines under it. The lead insight supplies the dates,
+# because every insight in one email shares a cutoff and a reporting period.
+email_header <- function(report, lead_insight) {
   tags <- htmltools::tags
-  insight <- report$insight
   logo <- base64enc::dataURI(
     file = inbox_path("images", "chickencloud-logo.png"), mime = "image/png"
   )
-  version <- if (report$purpose == "teaching_example") {
-    "First-run teaching example"
-  } else {
-    "Corrected preview"
-  }
-  period <- function(value) paste(value$start, "through", value$end)
-  percent <- function(value) sprintf("%.1f%%", 100 * value)
-  count <- function(value) format(value, big.mark = ",", scientific = FALSE, trim = TRUE)
-  rows <- lapply(insight$evidence, function(row) {
-    tags$tr(
-      tags$th(scope = "row", format(as.Date(row$cohort_month), "%Y-%m")),
-      tags$td(count(row$leads)), tags$td(count(row$won)),
-      tags$td(percent(row$conversion)), tags$td(percent(row$share_of_group_observed))
+  tags$header(
+    tags$div(class = "masthead",
+      tags$img(src = logo, alt = report$company, width = 300, height = 77),
+      tags$div(class = "titles",
+        tags$h1("Weekly inbox insights"),
+        tags$p(class = "muted small",
+          tags$strong(email_version_label(report$purpose)),
+          " \u00b7 Data as of ", lead_insight$data_as_of
+        )
+      )
+    ),
+    tags$p(class = "muted small",
+      "Reporting period: ", email_period(lead_insight$reporting_period), " (28 days)"
+    ),
+    tags$p(class = "muted small",
+      if (identical(report$purpose, "teaching_example")) {
+        "Authored teaching example; not a captured model run."
+      } else {
+        "Authored example; not a captured model run."
+      }
     )
-  })
+  )
+}
 
+# One insight: the finding, what it rests on, the caveat, and how to redo it.
+# Shared by the single-insight previews and the weekly email so three insights
+# cannot drift into three layouts.
+email_insight_section <- function(insight) {
+  tags <- htmltools::tags
+  kind <- insight_kind(insight)
+  percent <- function(value) sprintf("%.1f%%", 100 * value)
+  count <- function(value) {
+    format(value, big.mark = ",", scientific = FALSE, trim = TRUE)
+  }
+
+  evidence_table <- switch(kind,
+    cohort_conversion = tags$table(
+      tags$caption(if (insight$outcome_horizon == "30_days") {
+        "Wins within 30 days of entry; every lead observed for at least 30 days."
+      } else {
+        "Wins known at the snapshot; observation ages differ between cohorts."
+      }),
+      tags$thead(tags$tr(
+        tags$th(scope = "col", "Entry month"), tags$th(scope = "col", "Leads"),
+        tags$th(scope = "col", "Wins"), tags$th(scope = "col", "Conversion"),
+        tags$th(scope = "col", "Observed share")
+      )),
+      tags$tbody(lapply(insight$evidence, function(row) {
+        tags$tr(
+          tags$th(scope = "row", format(as.Date(row$cohort_month), "%Y-%m")),
+          tags$td(count(row$leads)), tags$td(count(row$won)),
+          tags$td(percent(row$conversion)),
+          tags$td(percent(row$share_of_group_observed))
+        )
+      }))
+    ),
+    segment_timing = tags$table(
+      tags$caption(paste(
+        "Median days from entry to won, over wins with recorded stage dates.",
+        "Deals not yet won are not counted, so these are lower bounds."
+      )),
+      tags$thead(tags$tr(
+        tags$th(scope = "col", "Segment"), tags$th(scope = "col", "Leads"),
+        tags$th(scope = "col", "Measured wins"),
+        tags$th(scope = "col", "Median days to won")
+      )),
+      tags$tbody(lapply(insight$evidence, function(row) {
+        tags$tr(
+          tags$th(scope = "row", row$segment),
+          tags$td(count(row$leads)), tags$td(count(row$measured_wins)),
+          tags$td(count(row$median_days_to_won))
+        )
+      }))
+    ),
+    stage_progression = tags$table(
+      tags$caption(paste(
+        "Leads reaching each stage by the cutoff.",
+        "Later stages are understated because recent leads have not got there yet."
+      )),
+      tags$thead(tags$tr(
+        tags$th(scope = "col", "Stage"), tags$th(scope = "col", "Leads"),
+        tags$th(scope = "col", "Share of entered")
+      )),
+      tags$tbody(lapply(insight$evidence, function(row) {
+        tags$tr(
+          tags$th(scope = "row", row$stage),
+          tags$td(count(row$leads)), tags$td(percent(row$share_of_entered))
+        )
+      }))
+    )
+  )
+
+  tags$section(class = "insight",
+    tags$h2(insight$title),
+    tags$p(insight$finding),
+    tags$div(class = "callout",
+      tags$p(tags$strong("Suggested action. "), insight$suggested_action)
+    ),
+
+    tags$h3(class = "label", switch(kind,
+      cohort_conversion = "Historical cohort evidence",
+      segment_timing = "Segment evidence",
+      stage_progression = "Funnel evidence"
+    )),
+    tags$p(class = "muted small", paste0(
+      "Entry dates: ", email_period(insight$evidence_window), ". ",
+      if (identical(kind, "cohort_conversion")) {
+        "These historical cohorts are separate from the reporting period."
+      } else {
+        "This evidence is separate from the 28-day reporting period."
+      }
+    )),
+    tags$p(insight$metric_definition),
+    # Drawn from insight$evidence, which validate_insight() has already checked
+    # reproduces from the snapshot. The chart and the table below it are
+    # therefore the same numbers by construction rather than by agreement.
+    tags$img(
+      class = "chart",
+      src = insight_chart_uri(insight),
+      alt = insight_evidence_alt(insight)
+    ),
+    evidence_table,
+
+    tags$div(class = "callout callout-quiet",
+      tags$p(tags$strong("Caveat. "), insight$caveat)
+    ),
+
+    tags$h3(class = "label", "Reproduce the evidence"),
+    tags$p(class = "muted small",
+      "Against the same frozen snapshot, using only dplyr and pins:"
+    ),
+    # .noWS is load-bearing here. htmltools indents child tags, and inside a
+    # <pre> that indentation is content.
+    tags$pre(.noWS = "inside",
+      tags$code(.noWS = "inside", insight$reproducible_code)
+    )
+  )
+}
+
+email_footer <- function(report) {
+  tags <- htmltools::tags
+  tags$footer(
+    tags$p("Preview only. ", report$provenance$note),
+    tags$p("Report: ", report$report_id),
+    tags$p("Snapshot: ", report$snapshot_id),
+    if (!is.null(report$archive_id)) tags$p("Context archive: ", report$archive_id),
+    if (length(report$applied_rule_ids)) {
+      tags$p("Applied rule: ", paste(unlist(report$applied_rule_ids), collapse = ", "))
+    }
+  )
+}
+
+email_document <- function(report, lead_insight, sections) {
+  tags <- htmltools::tags
   tags$html(lang = "en",
     tags$head(
       tags$meta(charset = "utf-8"),
       tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
-      tags$title(paste(report$company, version, sep = " - ")),
+      tags$title(paste(
+        report$company, email_version_label(report$purpose), sep = " - "
+      )),
       tags$style(htmltools::HTML(inbox_preview_css()))
     ),
     tags$body(
       tags$div(class = "sheet",
-        tags$header(
-          tags$div(class = "masthead",
-            tags$img(
-              src = logo, alt = report$company, width = 300, height = 77
-            ),
-            tags$div(class = "titles",
-              tags$h1("Weekly inbox insights"),
-              tags$p(class = "muted small",
-                tags$strong(version), " \u00b7 Data as of ", insight$data_as_of
-              )
-            )
-          ),
-          tags$p(class = "muted small",
-            "Reporting period: ", period(insight$reporting_period), " (28 days)"
-          ),
-          tags$p(class = "muted small",
-            "Authored teaching example; not a captured model run."
-          )
-        ),
-        tags$main(
-          tags$section(class = "insight",
-            tags$h2(insight$title),
-            tags$p(insight$finding),
-            tags$div(class = "callout",
-              tags$p(tags$strong("Suggested action. "), insight$suggested_action)
-            ),
-
-            tags$h3(class = "label", "Historical cohort evidence"),
-            # Built with paste0 rather than as separate children: htmltools puts
-            # each child on its own line, and the browser renders that newline
-            # as a space, which lands a gap before the full stop.
-            tags$p(class = "muted small", paste0(
-              "Entry dates: ", period(insight$evidence_window),
-              ". These historical cohorts are separate from the reporting period."
-            )),
-            tags$p(insight$metric_definition),
-            # Drawn from insight$evidence, which validate_insight() has already
-            # checked reproduces from the snapshot. The chart and the table
-            # below it are therefore the same numbers by construction rather
-            # than by agreement.
-            tags$img(
-              class = "chart",
-              src = insight_chart_uri(insight),
-              alt = insight_evidence_alt(insight)
-            ),
-            tags$table(
-              tags$caption(if (insight$outcome_horizon == "30_days") {
-                "Wins within 30 days of entry; every lead observed for at least 30 days."
-              } else {
-                "Wins known at the snapshot; observation ages differ between cohorts."
-              }),
-              tags$thead(tags$tr(
-                tags$th(scope = "col", "Entry month"), tags$th(scope = "col", "Leads"),
-                tags$th(scope = "col", "Wins"), tags$th(scope = "col", "Conversion"),
-                tags$th(scope = "col", "Observed share")
-              )),
-              tags$tbody(rows)
-            ),
-
-            tags$div(class = "callout callout-quiet",
-              tags$p(tags$strong("Caveat. "), insight$caveat)
-            ),
-
-            tags$h3(class = "label", "Reproduce the evidence"),
-            tags$p(class = "muted small",
-              "Against the same frozen snapshot, using only dplyr and pins:"
-            ),
-            # .noWS is load-bearing here. htmltools indents child tags, and
-            # inside a <pre> that indentation is content -- it rendered the
-            # first line of the snippet pushed halfway across the block.
-            tags$pre(.noWS = "inside",
-              tags$code(.noWS = "inside", insight$reproducible_code)
-            )
-          )
-        ),
-        tags$footer(
-          tags$p("Preview only. ", report$provenance$note),
-          tags$p("Report: ", report$report_id),
-          tags$p("Snapshot: ", report$snapshot_id),
-          if (!is.null(report$archive_id)) tags$p("Context archive: ", report$archive_id),
-          if (length(report$applied_rule_ids)) {
-            tags$p("Applied rule: ", paste(unlist(report$applied_rule_ids), collapse = ", "))
-          }
-        )
+        email_header(report, lead_insight),
+        tags$main(sections),
+        email_footer(report)
       )
     )
+  )
+}
+
+example_email_html <- function(report, snapshot) {
+  validate_example_report(report, snapshot)
+  email_document(
+    report, report$insight, email_insight_section(report$insight)
+  )
+}
+
+weekly_email_html <- function(report, snapshot) {
+  validate_weekly_report(report, snapshot)
+  email_document(
+    report, report$insights[[1]], lapply(report$insights, email_insight_section)
   )
 }
 
@@ -156,4 +230,8 @@ write_preview_html <- function(html, path) {
 
 write_email_preview <- function(report, snapshot, path) {
   write_preview_html(example_email_html(report, snapshot), path)
+}
+
+write_weekly_email_preview <- function(report, snapshot, path) {
+  write_preview_html(weekly_email_html(report, snapshot), path)
 }

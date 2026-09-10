@@ -133,6 +133,11 @@ inbox_preview_css <- function(max_width = "820px") {
     ".callout p:last-child { margin-bottom: 0; }",
     sprintf(".callout-quiet { border-left-color: %s; }", p$rule_strong),
 
+    # Successive insights in the weekly email. A rule and generous space rather
+    # than a card, so three insights read as one letter and not three notices.
+    sprintf(".insight + .insight { border-top: 1px solid %s;", INBOX_PALETTE$rule),
+    "  margin-top: 40px; padding-top: 28px; }",
+
     # Embedded figures
     ".chart { display: block; width: 100%; height: auto; margin: 10px 0 2px; }",
 

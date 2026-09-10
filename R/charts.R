@@ -1,6 +1,8 @@
 source(here::here("prep", "build_cohort.R"))
 source(here::here("R", "recipes.R"))
 source(here::here("R", "theme.R"))
+# insight_kind(), for dispatching the per-insight evidence charts.
+source(here::here("R", "report_contract.R"))
 
 latest_complete_chart_month <- function(as_of) {
   current_month <- as.Date(format(as_of, "%Y-%m-01"))
@@ -76,6 +78,78 @@ equal_30_day_chart_data <- function(snapshot) {
 # is tagged explanatory_only_not_for_reports; it must never appear inside a
 # report. This one is structurally incapable of showing that.
 insight_evidence_chart <- function(insight) {
+  switch(insight_kind(insight),
+    cohort_conversion = cohort_evidence_chart(insight),
+    segment_timing = segment_evidence_chart(insight),
+    stage_progression = stage_evidence_chart(insight)
+  )
+}
+
+# Bars rather than a line for the two non-cohort kinds: neither has a time axis,
+# and a line between segments would imply an order that does not exist.
+segment_evidence_chart <- function(insight) {
+  pal <- inbox_chart_colours()
+  data <- do.call(rbind, lapply(insight$evidence, function(row) {
+    data.frame(segment = row$segment, days = row$median_days_to_won)
+  }))
+  data$segment <- factor(data$segment, levels = data$segment[order(data$days)])
+  slowest <- data$segment[which.max(data$days)]
+
+  ggplot2::ggplot(data, ggplot2::aes(days, segment)) +
+    ggplot2::geom_col(
+      ggplot2::aes(fill = segment == slowest), width = 0.62, show.legend = FALSE
+    ) +
+    ggplot2::scale_fill_manual(values = c(`FALSE` = pal$secondary, `TRUE` = pal$highlight)) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = paste0(round(days), " days")),
+      hjust = -0.18, size = 3.5, colour = pal$text
+    ) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0, 0.18))) +
+    ggplot2::labs(x = NULL, y = NULL) +
+    inbox_theme_ggplot(base_size = 12) +
+    ggplot2::theme(
+      panel.grid.major.y = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_blank(),
+      axis.text.x = ggplot2::element_blank(),
+      plot.margin = ggplot2::margin(6, 10, 2, 4)
+    )
+}
+
+stage_evidence_chart <- function(insight) {
+  pal <- inbox_chart_colours()
+  data <- do.call(rbind, lapply(insight$evidence, function(row) {
+    data.frame(stage = row$stage, leads = row$leads, share = row$share_of_entered)
+  }))
+  data$stage <- factor(data$stage, levels = rev(data$stage))
+  # The accent marks where the largest single loss happens, which is the point
+  # of the insight rather than the funnel's overall shape.
+  biggest_loss <- as.character(data$stage[which.max(-diff(c(data$leads[1], data$leads)))])
+
+  ggplot2::ggplot(data, ggplot2::aes(leads, stage)) +
+    ggplot2::geom_col(
+      ggplot2::aes(fill = as.character(stage) == biggest_loss),
+      width = 0.62, show.legend = FALSE
+    ) +
+    ggplot2::scale_fill_manual(values = c(`FALSE` = pal$secondary, `TRUE` = pal$highlight)) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = paste0(
+        format(leads, big.mark = ",", trim = TRUE), "  (",
+        sprintf("%.0f%%", 100 * share), ")"
+      )),
+      hjust = -0.1, size = 3.4, colour = pal$text
+    ) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0, 0.26))) +
+    ggplot2::labs(x = NULL, y = NULL) +
+    inbox_theme_ggplot(base_size = 12) +
+    ggplot2::theme(
+      panel.grid.major.y = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_blank(),
+      axis.text.x = ggplot2::element_blank(),
+      plot.margin = ggplot2::margin(6, 10, 2, 4)
+    )
+}
+
+cohort_evidence_chart <- function(insight) {
   pal <- inbox_chart_colours()
   data <- do.call(rbind, lapply(insight$evidence, function(row) {
     data.frame(
@@ -123,6 +197,26 @@ insight_evidence_chart <- function(insight) {
 # Alt text built from the same rows, so a screen reader gets the figures rather
 # than being told there is a chart.
 insight_evidence_alt <- function(insight) {
+  switch(insight_kind(insight),
+    segment_timing = paste0(
+      "Median days from entry to won by segment: ",
+      paste(vapply(insight$evidence, function(row) {
+        sprintf("%s %.0f days", row$segment, row$median_days_to_won)
+      }, character(1)), collapse = ", "), "."
+    ),
+    stage_progression = paste0(
+      "Leads reaching each stage: ",
+      paste(vapply(insight$evidence, function(row) {
+        sprintf("%s %s (%.0f%%)", row$stage,
+          format(row$leads, big.mark = ",", trim = TRUE),
+          100 * row$share_of_entered)
+      }, character(1)), collapse = ", "), "."
+    ),
+    cohort_evidence_alt(insight)
+  )
+}
+
+cohort_evidence_alt <- function(insight) {
   parts <- vapply(insight$evidence, function(row) {
     sprintf("%s %.1f%%", format(as.Date(row$cohort_month), "%Y-%m"), 100 * row$conversion)
   }, character(1))

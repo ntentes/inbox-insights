@@ -521,3 +521,103 @@ read_example_report <- function(path, snapshot) {
   validate_example_report(report, snapshot)
   report
 }
+
+# --- The weekly email: several insights in one envelope ---------------------
+
+# A separate envelope rather than a plural field on the existing one. Adding
+# `insights` to the single-insight report would change its serialisation, move
+# its hash, and invalidate the captured human approvals that reference it. The
+# two share every other field and all of the per-insight validation.
+WEEKLY_REPORT_PURPOSE <- "weekly_email"
+
+validate_weekly_report <- function(report, snapshot) {
+  fields <- c("schema_version", "report_id", "purpose", "company", "snapshot_id",
+    "provenance", "archive_id", "applied_rule_ids", "insights")
+  if (!is.list(report) || anyDuplicated(names(report)) ||
+      !setequal(names(report), fields)) {
+    stop("Invalid weekly report envelope fields.", call. = FALSE)
+  }
+  text <- list(type = "string")
+  validate_report_value(report$report_id, text, "report_id")
+  validate_report_value(report$purpose, list(
+    type = "string", enum = WEEKLY_REPORT_PURPOSE
+  ), "purpose")
+  validate_report_value(report$provenance, report_object(list(
+    kind = list(type = "string", enum = "authored_fixture"), author = text, note = text
+  )), "provenance")
+  validate_report_value(report$schema_version, list(
+    type = "integer", minimum = 1L, maximum = 1L
+  ), "schema_version")
+  if (!identical(report$company, INBOX_COMPANY) ||
+      !identical(report$snapshot_id, report_snapshot_id(snapshot))) {
+    stop("Report version, company, or snapshot identity does not match.", call. = FALSE)
+  }
+
+  # A weekly email is the output the standing rule exists to govern, so it may
+  # not be built without naming the rule and the archive it came from.
+  if (is.null(report$archive_id) || !length(report$applied_rule_ids)) {
+    stop(
+      "A weekly email must reference the approved rule and its archive.",
+      call. = FALSE
+    )
+  }
+  validate_report_value(report$archive_id, text, "archive_id")
+  validate_report_value(report$applied_rule_ids, list(
+    type = "array", minItems = 1L, items = text
+  ), "applied_rule_ids")
+
+  if (!is.list(report$insights) || length(report$insights) < 1L) {
+    stop("A weekly email needs at least one insight.", call. = FALSE)
+  }
+  kinds <- vapply(report$insights, insight_kind, character(1))
+  if (anyDuplicated(kinds)) {
+    stop(
+      "Each insight must be a different kind; got: ",
+      paste(kinds, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  # The corrected cohort comparison leads, because it is the one the approved
+  # rule changed. An email that buried it would not demonstrate the rule.
+  if (!identical(kinds[[1]], "cohort_conversion") ||
+      !identical(report$insights[[1]]$outcome_horizon, "30_days")) {
+    stop(
+      "The weekly email must lead with the corrected equal-window cohort insight.",
+      call. = FALSE
+    )
+  }
+  for (insight in report$insights) validate_insight(insight, snapshot)
+  invisible(report)
+}
+
+new_weekly_report <- function(insights, snapshot, archive, applied_rule_ids,
+                              report_id = "weekly-report") {
+  result <- list(
+    schema_version = 1L, report_id = report_id,
+    purpose = WEEKLY_REPORT_PURPOSE, company = INBOX_COMPANY,
+    snapshot_id = report_snapshot_id(snapshot),
+    provenance = list(
+      kind = "authored_fixture", author = "Copilot",
+      note = "Authored worked example, not a captured live model run."
+    ),
+    archive_id = archive$archive_id,
+    applied_rule_ids = applied_rule_ids,
+    insights = insights
+  )
+  validate_weekly_report(result, snapshot)
+  result
+}
+
+write_weekly_report <- function(report, snapshot, path) {
+  validate_weekly_report(report, snapshot)
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  jsonlite::write_json(report, path, auto_unbox = TRUE, null = "null",
+    digits = NA, pretty = TRUE)
+  invisible(path)
+}
+
+read_weekly_report <- function(path, snapshot) {
+  report <- jsonlite::read_json(path, simplifyVector = FALSE)
+  validate_weekly_report(report, snapshot)
+  report
+}
