@@ -26,10 +26,6 @@ server.
 <p align="center"><sub>The top of one weekly email, as it lands in the inbox and
 as Connect renders it: the same HTML.</sub></p>
 
-ChickenCloud sells a cloud platform, and its mascot is a cloud-shaped
-goldendoodle named Chicken. Neither the company, the leads nor the deals exist;
-the data is generated from a seed, so every artifact here can be rebuilt.
-
 ## The loop
 
 ```
@@ -54,21 +50,20 @@ the data is generated from a seed, so every artifact here can be rebuilt.
 frozen snapshot of the funnel, the house recipes for the calculations the
 business relies on, the approved directives, and the headlines of earlier runs.
 It asks for candidate questions, three developed headlines, and a submitted
-report. Each headline rests on a table the model saved from its own session; the
-runner checks the table's shape, the schema and that the code parses, and does
-not re-run it. On success the email goes out and the headlines are pinned. On
+report. On success the email goes out and the headlines are pinned. On
 failure nothing is sent and the page shows the whole conversation.
 
 **The feedback app** (`apps/feedback/app.R`) opens on the latest headlines. A
-reader writes a correction about one of them; it is saved as pending feedback
-and changes nothing. A reviewer then approves it as a directive, in the
-reviewer's words or edited, bound to the exact state the reviewer was shown.
+reader writes a correction about one of them; it is saved as pending feedback.
+A reviewer then approves it as a directive (or can edit and then approve).
 From the next run on, every report and chat is given the directive.
 
-**The chat app** (`apps/chat/app.R`) is a thin interface over the same
-accumulated state, not a second AI system: the same snapshot, recipes,
-directives and headlines go into its prompt, each session gets its own
-`mcp-repl`, and it can save a plot from that session and show it inline.
+**The chat app** (`apps/chat/app.R`) allows a user to ask questions about the
+results in the report, or ask the agent to investigate something else. The app
+is a thin interface over the same accumulated state, not a second AI system:
+the same snapshot, recipes, directives and headlines go into its prompt, each
+session gets its own `mcp-repl`, and it can save a plot from that session and
+show it inline.
 
 ## Repository layout
 
