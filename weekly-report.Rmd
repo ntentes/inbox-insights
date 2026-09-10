@@ -41,34 +41,17 @@ library(dplyr)
 library(ellmer)
 library(mcptools)
 
-source(here::here("prep", "build_cohort.R"))
-source(here::here("R", "live_report.R"))
+source(here::here("R", "snapshot_pin.R"))
+source(here::here("R", "live_session.R"))
+source(here::here("R", "headline_history.R"))
 source(here::here("R", "token_budget.R"))
 source(here::here("R", "email_preview.R"))
 ```
 
 ```{r check-repl}
-# Resolve the binary rather than assuming PATH. deploy.R bundles a Linux build
-# at bin/mcp-repl for Connect; locally that file is the wrong architecture, so
-# it is used only if it actually runs. The installer puts a local copy in
-# ~/.local/bin, which an Rmd render often does not inherit.
-repl_binary <- local({
-  bundled <- here::here("bin", "mcp-repl")
-  if (file.exists(bundled)) {
-    if (file.access(bundled, mode = 1L) != 0L) Sys.chmod(bundled, "0755")
-    runs <- suppressWarnings(system2(bundled, "--help", stdout = FALSE, stderr = FALSE))
-    if (identical(runs, 0L)) return(bundled)
-  }
-  found <- Sys.which("mcp-repl")[[1]]
-  if (nzchar(found)) return(found)
-  fallback <- path.expand("~/.local/bin/mcp-repl")
-  if (file.exists(fallback)) return(fallback)
-  stop(
-    "mcp-repl not found. Install it with:\n",
-    "  curl -fsSL https://raw.githubusercontent.com/posit-dev/mcp-repl/main/scripts/install.sh | sh",
-    call. = FALSE
-  )
-})
+# Resolved first, before any data is staged, so a missing REPL fails the run at
+# the first chunk. R/live_session.R knows where deploy.R puts the Linux build.
+repl_binary <- live_repl_binary()
 ```
 
 ```{r config}
@@ -84,10 +67,15 @@ N_HEADLINES <- 3L    # carried into the email
 # A REPL on a schedule is an open-ended loop with a bill attached. The notice
 # gives the model a chance to finish cleanly; the caps stop it regardless.
 # R/token_budget.R is where both are enforced.
-budget <- token_budget(input_cap = 1e6, output_cap = 1e5, warn_at = 0.8)
+budget <- token_budget(input_cap = 2e6, output_cap = 1e5, warn_at = 0.8, call_cap = 150)
 
 OUTPUT_DIR <- inbox_artifact_path("live")
 dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
+
+# The shared state: approved rules and the headlines of earlier runs. The
+# folder board locally, the Connect board when this runs there; R/config.R
+# decides, and the apps read the same one.
+board <- inbox_board()
 ```
 
 ```{r load-data}
@@ -96,22 +84,17 @@ dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 # demonstration even when the arithmetic checked out.
 snapshot <- funnel_snapshot(read_funnel_cohort())
 
-# One directory, one file. The REPL is spawned with this as its working
-# directory, so the workspace it may write to is this and not the repository,
-# and the tables it saves land where the runner can read them back.
-scratch <- file.path(tempdir(), paste0("inbox-repl-", Sys.getpid()))
-dir.create(scratch, recursive = TRUE, showWarnings = FALSE)
-saveRDS(snapshot, file.path(scratch, "snapshot.rds"))
+# Pinned before the run rather than after, so the apps and the email's
+# pin_read() line have the data even on a week the model fails to report.
+write_snapshot_pin(board, snapshot)
 
-repl_config <- file.path(scratch, "mcp-repl.json")
-jsonlite::write_json(list(mcpServers = list(`r-repl` = list(
-  command = repl_binary,
-  args = list(
-    "--interpreter", "r",
-    "--sandbox", "workspace-write",
-    "--add-writable-root", scratch
-  )
-))), repl_config, auto_unbox = TRUE, pretty = TRUE)
+# One directory holding the snapshot, which the REPL is spawned in so that its
+# writable workspace is that directory and not the repository. The tables the
+# model saves land there, where the tools below read them back.
+scratch <- live_repl_scratch(snapshot, repl_binary)
+
+# What earlier runs said, so this one does not say it again.
+history <- read_headline_history(board)
 ```
 
 ```{r tools}
@@ -124,8 +107,8 @@ staging$submitted <- FALSE
 
 submit_candidates <- ellmer::tool(
   function(candidates) {
-    if (length(candidates) < N_HEADLINES) {
-      stop("Offer at least ", N_HEADLINES, " candidates before choosing.", call. = FALSE)
+    if (length(candidates) < N_CANDIDATES) {
+      stop("Offer at least ", N_CANDIDATES, " candidates before choosing.", call. = FALSE)
     }
     staging$candidates <- candidates
     paste0("Recorded ", length(candidates), " candidates. Now develop ",
@@ -156,7 +139,7 @@ submit_headline <- ellmer::tool(
       metric_definition = metric_definition, caveat = caveat,
       # The table the model saved from the REPL, read back from the directory
       # the REPL was spawned in. The model never retypes its numbers.
-      evidence = read_live_evidence(scratch, evidence_file),
+      evidence = read_live_evidence(scratch$dir, evidence_file),
       reproducible_code = reproducible_code
     )
 
@@ -180,8 +163,8 @@ submit_headline <- ellmer::tool(
     caveat = ellmer::type_string("What this evidence cannot establish."),
     evidence_file = ellmer::type_string(paste(
       "File name of the saved table, e.g. headline_1.rds: one data frame, first",
-      "column the row labels, every other column numeric, at most",
-      LIVE_EVIDENCE_MAX_ROWS, "rows."
+      "column the row labels, then at most", LIVE_EVIDENCE_MAX_COLUMNS,
+      "numeric columns, at most", LIVE_EVIDENCE_MAX_ROWS, "rows."
     )),
     reproducible_code = ellmer::type_string(
       "The R code that produced that exact table from `snapshot`."
@@ -206,41 +189,42 @@ submit_report <- ellmer::tool(
 ```
 
 ```{r system-prompt}
+# The data warnings and the approved context come from R/live_session.R, which
+# the chat app also uses, so the two agents are told the same things. The
+# previous headlines come from the board, so this run does not repeat them.
 system_prompt <- paste(
   "You write a weekly funnel report for ChickenCloud, a B2B SaaS company.",
   "",
-  "You have a sandboxed R session. `snapshot.rds` in the working directory is a",
-  "point-in-time view of the lead funnel: one row per lead, with entry and stage",
-  "dates, durations, and dimensions assigned at entry. Load it with",
-  "`snapshot <- readRDS(\"snapshot.rds\")`.",
+  live_snapshot_prompt(),
   "",
   "WORKFLOW",
   paste0("1. Explore. 2. Call submit_candidates with at least ", N_CANDIDATES,
     " questions worth asking. 3. Develop the ", N_HEADLINES,
     " best with submit_headline, one call each. 4. Call submit_report."),
   "",
-  "WHAT THE DATA WILL DO TO YOU IF YOU ARE CARELESS",
-  "- Recent cohorts have had less time to convert. Comparing conversion across",
-  "  cohorts of different ages shows a decline that is only delay. Compare over",
-  "  an equal window from entry, or say the newest cohort is incomplete.",
-  "- late_industry, late_deal_value and late_competitor are captured partway",
-  "  down the funnel and are blank for leads that stopped earlier. Grouping a",
-  "  full-funnel denominator by one of them silently changes the denominator.",
-  "- campaigns holds several values per lead. Splitting it before grouping",
-  "  counts a lead once per campaign. Report touches, not leads.",
-  "- Some stage dates were backfilled; the use_for_time_* flags say which are",
-  "  trustworthy for durations. A duration from a guessed date is fiction.",
-  "- won_as_of is what was known at the cutoff. There is no hindsight here and",
-  "  you should not imply any.",
+  live_data_prompt(),
+  "",
+  live_context_prompt(board, snapshot),
+  "",
+  headline_history_prompt(history),
   "",
   "EVIDENCE",
   "Every headline rests on one small table. Compute it in the R session, then",
   "save it in the working directory: `saveRDS(table, \"headline_1.rds\")`. One",
-  "data frame; the first column labels the rows, every other column is a",
-  paste0("number, and at most ", LIVE_EVIDENCE_MAX_ROWS, " rows. Pass the file name as evidence_file, and"),
+  "data frame; the first column labels the rows, then at most",
+  paste0(LIVE_EVIDENCE_MAX_COLUMNS, " numeric columns, and at most ", LIVE_EVIDENCE_MAX_ROWS,
+    " rows: an email is narrow, so keep the columns that carry the finding."),
+  "Name columns for what they hold, because the email formats by name: `_pct`",
+  "or `share`/`rate` for percentages (a share between 0 and 1 is shown as a",
+  "percentage), `value`/`amount`/`revenue` for money, plain names for counts.",
+  "Pass the file name as evidence_file, and",
   "pass the code that produced that exact table from `snapshot` as",
   "reproducible_code. The table and the code go into the email as you hand them",
   "in, and a reader will run the code, so report only what you computed.",
+  "That code must be plain dplyr against `snapshot`, not recipe calls: the",
+  "reader has the snapshot pin and dplyr, not recipes.R. Use the recipes to get",
+  "the number, then spell the same calculation out longhand and check the two",
+  "agree before handing it in.",
   "",
   "Prefer a finding with a decision attached to one that is merely true.",
   sep = "\n"
@@ -251,11 +235,10 @@ system_prompt <- paste(
 report <- NULL
 failure <- NULL
 
-result <- try({
-  # Spawn the REPL from the scratch directory so that its writable workspace is
-  # that directory rather than wherever this document happens to be rendered.
-  repl_tools <- withr::with_dir(scratch, mcptools::mcp_tools(config = repl_config))
-  if (!length(repl_tools)) stop("The REPL exposed no tools.", call. = FALSE)
+# The calling handler runs before the stack unwinds, so the log gets the
+# innermost calls of whatever failed; try() alone would keep only the message.
+result <- try(withCallingHandlers({
+  repl_tools <- live_repl_tools(scratch)
 
   chat <- ellmer::chat(
     paste0(PROVIDER, "/", MODEL), system_prompt = system_prompt, echo = "none"
@@ -268,14 +251,41 @@ result <- try({
     c(repl_tools, list(submit_candidates, submit_headline, submit_report)),
     deliver_budget_notice, budget = budget
   ))
+  chat$on_tool_request(function(request) count_tool_call(budget))
   chat$on_tool_result(function(result) {
+    # One line per tool call in the process log, so a run on Connect can be
+    # followed while it happens and read back when it does not finish.
+    # The REPL reports its own failures as text, not as tool errors, so the
+    # start of every result is logged too.
+    one_line <- function(x) substr(gsub("\\s+", " ", paste(format(x), collapse = " ")), 1, 160)
+    live_log("tool ", result@request@name, if (!is.null(result@error)) {
+      paste0(" ERROR: ", one_line(result@error))
+    } else {
+      paste0(" -> ", one_line(result@value))
+    })
     check_token_budget(budget, chat$get_tokens())
   })
 
+  live_log("run started: ", PROVIDER, "/", MODEL, ", ", length(repl_tools), " REPL tools")
   chat$chat(paste0(
     "Produce this week's report. Explore the snapshot, shortlist at least ",
     N_CANDIDATES, " questions, then develop the ", N_HEADLINES, " best."
   ))
+
+  # A model that has its headlines accepted and then summarises instead of
+  # calling the last tool is common enough to deserve one reminder, and no more.
+  if (!staging$submitted) {
+    live_log("model ended its turn without submit_report; one reminder")
+    chat$chat(paste(
+      "You stopped without calling submit_report. If every headline slot is",
+      "filled, call submit_report now; otherwise finish the missing headlines",
+      "and then call it."
+    ))
+  }
+
+  # The callback runs after tool results, and the model's closing turn has
+  # none, so the final tally is checked here before anything is written.
+  check_token_budget(budget, chat$get_tokens())
 
   if (!staging$submitted) {
     stop("The model stopped without calling submit_report.", call. = FALSE)
@@ -283,11 +293,23 @@ result <- try({
 
   report <- new_live_report(
     insights = staging$headlines, snapshot = snapshot,
-    provider = PROVIDER, model = MODEL
+    provider = PROVIDER, model = MODEL,
+    tokens = live_token_usage(chat$get_tokens())
   )
-}, silent = TRUE)
+}, error = function(e) {
+  calls <- vapply(sys.calls(), function(call) substr(deparse(call)[[1]], 1, 100), character(1))
+  live_log("error in: ", paste(rev(utils::head(rev(calls), 12)), collapse = "  <-  "))
+}), silent = TRUE)
 
-if (inherits(result, "try-error")) failure <- conditionMessage(attr(result, "condition"))
+if (inherits(result, "try-error")) {
+  failure <- conditionMessage(attr(result, "condition"))
+  # The whole conversation, clipped, into the log and onto the page: the one
+  # thing a failed unattended run owes whoever has to work out why.
+  transcript <- if (exists("chat", inherits = FALSE)) live_transcript(chat$get_turns()) else character()
+  live_log("FAILED: ", failure)
+  for (line in transcript) live_log(line)
+  failure <- paste(c(failure, "", "What happened:", transcript), collapse = "\n")
+}
 ```
 
 ```{r output}
@@ -310,10 +332,17 @@ failure_page <- function(message) {
 # doRenderTags, not as.character: the latter hoists <head> out of the document
 # the way Shiny wants, which would leave the email and the page without CSS.
 if (is.null(failure)) {
-  page <- htmltools::doRenderTags(live_email_html(report, snapshot))
+  email <- live_email_html(report, snapshot)
+  page <- htmltools::doRenderTags(email)
+  # The same HTML with the logo as a CID attachment instead of a data: URI,
+  # which mail clients would strip.
+  deliverable <- email_deliverable(email)
   write_live_report(report, file.path(OUTPUT_DIR, "weekly_report_live.json"))
   write_live_email_preview(report, snapshot, file.path(OUTPUT_DIR, "weekly-email-live.html"))
-  message("Wrote ", length(report$insights), " headlines to ", OUTPUT_DIR)
+  # On the board for the next run's prompt and for the apps.
+  append_headline_history(board, report, snapshot)
+  live_log("wrote ", length(report$insights), " headlines to ", OUTPUT_DIR,
+    " and to the ", HEADLINE_HISTORY_PIN, " pin")
 
   # On Connect this is the email that goes out; anywhere else the metadata is
   # inert and the preview file is the deliverable.
@@ -321,7 +350,9 @@ if (is.null(failure)) {
     rsc_email_subject = paste0(
       INBOX_COMPANY, " weekly insights, data as of ", require_snapshot(snapshot)
     ),
-    rsc_email_body_html = page
+    rsc_email_body_html = deliverable$html,
+    rsc_email_images = deliverable$images,
+    rsc_email_suppress_report_attachment = TRUE
   )
 } else {
   # No partial email, and on Connect no email at all. A run that did not finish
@@ -336,5 +367,5 @@ knitr::raw_html(page)
 ```
 
 ```{r cleanup, include = FALSE}
-unlink(scratch, recursive = TRUE)
+unlink(scratch$dir, recursive = TRUE)
 ```
