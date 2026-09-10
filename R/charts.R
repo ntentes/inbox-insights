@@ -1,5 +1,6 @@
 source(here::here("prep", "build_cohort.R"))
 source(here::here("R", "recipes.R"))
+source(here::here("R", "theme.R"))
 
 latest_complete_chart_month <- function(as_of) {
   current_month <- as.Date(format(as_of, "%Y-%m-01"))
@@ -94,7 +95,11 @@ chart_highlight <- function(data) {
       xmin = cohort_month - 13, xmax = cohort_month + 13,
       ymin = -Inf, ymax = Inf
     ),
-    inherit.aes = FALSE, fill = "grey90"
+    inherit.aes = FALSE,
+    # The one place the accent appears in a chart. The band marks the cohort
+    # under discussion, which is exactly the "one thing that matters per view"
+    # the accent is reserved for.
+    fill = inbox_chart_colours()$highlight, alpha = 0.25
   )
 }
 
@@ -131,7 +136,12 @@ plot_as_of_conversion <- function(data) {
       limits = c(0, max(data$conversion) + 0.03),
       expand = ggplot2::expansion(mult = c(0, 0))
     ) +
-    ggplot2::scale_colour_manual(values = c("#3366A8", "#666666"), name = NULL) +
+    ggplot2::scale_colour_manual(
+      # Ink for what was actually known; muted grey for the hindsight series,
+      # which is explanatory and must not look like the headline.
+      values = unname(unlist(inbox_chart_colours()[c("primary", "secondary")])),
+      name = NULL
+    ) +
     ggplot2::scale_linetype_manual(values = c("solid", "dashed"), name = NULL) +
     ggplot2::labs(
       title = "Conversion at the cutoff and with hindsight",
@@ -144,12 +154,7 @@ plot_as_of_conversion <- function(data) {
         sep = "\n"
       )
     ) +
-    ggplot2::theme_minimal(base_size = 16) +
-    ggplot2::theme(
-      legend.position = "bottom",
-      panel.grid.minor = ggplot2::element_blank(),
-      plot.caption = ggplot2::element_text(hjust = 0, size = 12)
-    )
+    inbox_theme_ggplot()
 }
 
 plot_equal_30_day_conversion <- function(data) {
@@ -167,10 +172,14 @@ plot_equal_30_day_conversion <- function(data) {
 
   ggplot2::ggplot(data, ggplot2::aes(cohort_month, conversion)) +
     chart_highlight(data) +
-    ggplot2::geom_line(ggplot2::aes(group = 1), colour = "#3366A8", linewidth = 0.9) +
-    ggplot2::geom_point(colour = "#3366A8", size = 3) +
+    ggplot2::geom_line(
+      ggplot2::aes(group = 1),
+      colour = inbox_chart_colours()$primary, linewidth = 0.9
+    ) +
+    ggplot2::geom_point(colour = inbox_chart_colours()$primary, size = 3) +
     ggplot2::geom_text(
-      ggplot2::aes(label = label), nudge_y = 0.009, size = 4.5
+      ggplot2::aes(label = label), nudge_y = 0.009, size = 4.5,
+      colour = inbox_chart_colours()$text
     ) +
     chart_month_scale(data) +
     ggplot2::scale_y_continuous(
@@ -189,9 +198,5 @@ plot_equal_30_day_conversion <- function(data) {
         sep = "\n"
       )
     ) +
-    ggplot2::theme_minimal(base_size = 16) +
-    ggplot2::theme(
-      panel.grid.minor = ggplot2::element_blank(),
-      plot.caption = ggplot2::element_text(hjust = 0, size = 12)
-    )
+    inbox_theme_ggplot()
 }
