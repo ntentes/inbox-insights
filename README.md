@@ -1,14 +1,11 @@
 # Inbox Insights with ellmer and Posit Connect
 
-<p align="center">
-  <img src="images/chickencloud-logo.png" alt="ChickenCloud" width="240">
-</p>
-
 The proof of concept behind the posit::conf(2026) talk of the same name, by
 Konstantinos Ntentes, Senior Data Scientist at Posit.
 
-A model writes a weekly funnel report for **ChickenCloud**, a fictitious B2B
-SaaS company, and Posit Connect emails it. Readers reply through two Shiny apps:
+A model writes a weekly funnel report for
+<img src="images/chickencloud-logo.png" alt="ChickenCloud" height="26" align="absmiddle">,
+a fictitious B2B SaaS company, and Posit Connect emails it. Readers reply through two Shiny apps:
 a feedback app that turns a reviewer's correction into a standing directive the
 next report must follow, and a chat app that answers questions about the report
 from the same data, with the same rules, in a sandboxed R session. The three
