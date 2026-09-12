@@ -1,14 +1,20 @@
 # Inbox Insights with ellmer and Posit Connect
 
-The proof of concept behind the [posit::conf(2026)](https://conf.posit.co/2026/) talk of the same name, by
-Konstantinos Ntentes, Senior Data Scientist at Posit.
+The proof of concept behind the [posit::conf(2026)](https://conf.posit.co/) talk of the same name.
 
-This architecture highlights one strategy of many to use when crowdsourcing an
-informal context archive for use by the data agents in your organization. This
-strategy is particularly useful if you don't have access to formal context
-management with your tools. This example works with a single view, but can be
-modified to work with multiple views by explaining the join relationship in the
-context archive.
+**When this fits.** There are many ways to give an agent context, and many
+tools now ship with formal context management built in. This project is not
+that. It shows one informal way to crowdsource a context archive for a single
+data view: house recipes, approved directives and the headlines of earlier
+runs, gathered from the people who read the report. It is a good fit when you
+have one trusted view, a small reviewing audience, and no formal context layer
+to lean on. It can stretch to a few related views by describing the join in
+the archive, but as written it is not an org-wide context management system;
+making it maintainable across many views, teams and agents would mean
+rethinking how directives are scoped, owned and retired. Other
+[posit::conf(2026)](https://conf.posit.co/) talks cover that larger
+problem, including more complex context management and managing data agents
+at scale.
 
 A model writes a weekly funnel report for
 <img src="images/chickencloud-logo-inline.png" alt="ChickenCloud" height="32" align="absmiddle">,
