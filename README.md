@@ -61,15 +61,18 @@ failure nothing is sent and the page shows the whole conversation.
 
 **The feedback app** (`apps/feedback/app.R`) opens on the latest headlines. A
 reader writes a correction about one of them; it is saved as pending feedback.
-A reviewer then approves it as a directive (or can edit and then approve).
-From the next run on, every report and chat is given the directive.
+A collaborator on the app then approves it as a directive, as written or
+edited. On Connect the approval tab is shown only to the app's owner and
+collaborators and approving is refused for anyone else; locally there is no
+login and anyone can approve. From the next run on, every report and chat is
+given the directive.
 
 **The chat app** (`apps/chat/app.R`) allows a user to ask questions about the
 results in the report, or ask the agent to investigate something else. The app
 is a thin interface over the same accumulated state, not a second AI system:
 the same snapshot, recipes, directives and headlines go into its prompt, each
-session gets its own `mcp-repl`, and it can save a plot from that session and
-show it inline.
+session gets its own `mcp-repl`, and a chart the model saves, or merely
+prints, in that session is shown inline.
 
 ## Repository layout
 
@@ -91,6 +94,8 @@ R/headline_history.R         the weekly-headlines pin and the prompt built from 
 R/snapshot_pin.R             the funnel-snapshot pin
 R/feedback.R                 guidance state: feedback, directives, approvals
 R/context_archive.R          what the model may know: definitions and directives
+R/chat_plots.R               how a chart drawn in the sandbox reaches the reader
+R/connect_access.R           who counts as a collaborator on Connect
 R/token_budget.R             caps and the wrap-up notice for an unattended run
 R/email_preview.R            the one email layout, page and mail alike
 R/theme.R                    palette, stylesheet, inline styles, Shiny theme
@@ -172,7 +177,8 @@ build, and watch the first run's log.
   what the model may know: the initial definitions and the approved directives
   from the feedback app, each with who approved it and when, its id a hash of
   its text so a directive edited afterwards is refused. Feedback must be
-  approved by the maintainer before it reaches the next prompt.
+  approved by a collaborator on the feedback app before it reaches the next
+  prompt.
 - **Memory of what was said.** Each run appends its headlines to the
   `weekly-headlines` pin and reads the last four runs back, with instructions
   not to repeat them and to say so when building on one.

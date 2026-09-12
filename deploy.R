@@ -37,7 +37,7 @@ shared_files <- function() {
   c(
     "config.example.R",
     file.path("R", paste0(c(
-      "charts", "config", "context_archive", "email_preview", "feedback",
+      "charts", "chat_plots", "config", "connect_access", "context_archive", "email_preview", "feedback",
       "headline_history", "live_report", "live_session", "recipes",
       "report_contract", "snapshot", "snapshot_pin", "theme", "token_budget"
     ), ".R")),

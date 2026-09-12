@@ -17,6 +17,7 @@ source(here::here("prep", "build_initial_report.R"))
 source(here::here("R", "context_archive.R"))
 source(here::here("R", "headline_history.R"))
 source(here::here("R", "theme.R"))
+source(here::here("R", "connect_access.R"))
 
 board <- inbox_board()
 snapshot <- current_snapshot(board)
@@ -67,6 +68,7 @@ about_choices <- function(rows) {
 }
 
 ui <- page_navbar(
+  id = "nav",
   title = inbox_app_masthead(paste(INBOX_COMPANY, "Weekly Insights: Feedback")),
   window_title = paste(INBOX_COMPANY, "Weekly Insights: Feedback"),
   theme = inbox_bs_theme(),
@@ -81,8 +83,8 @@ ui <- page_navbar(
         textAreaInput("feedback_text", "What should change, and why?", rows = 7),
         actionButton("submit_feedback", "Save as pending feedback", class = "btn-primary w-100"),
         p(class = "small text-muted-warm mt-3",
-          "Saved feedback is pending. It changes nothing until a reviewer approves",
-          "it as a directive on the next tab, and the report's model never sees it",
+          "Saved feedback is pending. It changes nothing until a collaborator on this",
+          "app approves it as a directive, and the report's model never sees it",
           "before that.")
       ),
       if (nrow(latest)) {
@@ -134,6 +136,25 @@ server <- function(input, output, session) {
   current_user <- reactive({
     if (on_connect) session$user else trimws(input$author %||% Sys.info()[["user"]])
   })
+
+  # On Connect only the app's collaborators (its owner and anyone given the
+  # collaborator role) see the approval tab or can approve; see
+  # R/connect_access.R. The content name is the one deploy.R publishes under.
+  # Locally there is no login and anyone can approve.
+  access <- if (on_connect) {
+    feedback_access(session$user, session$groups, "chickencloud-weekly-insights-feedback")
+  } else {
+    list(allowed = TRUE, reason = NULL)
+  }
+  if (!access$allowed) {
+    message("approval disabled for ", session$user, ": ", access$reason)
+    nav_hide("nav", "Pending feedback and approval")
+  }
+  refused <- function() {
+    if (access$allowed) return(FALSE)
+    notify("Only a collaborator on this app can approve directives.", "error")
+    TRUE
+  }
 
   observeEvent(input$submit_feedback, {
     text <- trimws(input$feedback_text %||% "")
@@ -236,6 +257,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$initialize, {
+    if (refused()) return()
     result <- tryCatch(
       initialize_guidance(board, initial_bad_report(snapshot), snapshot),
       error = function(e) e
@@ -246,6 +268,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$approve, {
+    if (refused()) return()
     result <- tryCatch(
       approve_directive(
         board, snapshot, input$source_feedback, current_user(), shown_state_id(),

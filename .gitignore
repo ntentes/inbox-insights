@@ -35,7 +35,9 @@
 !/R/
 /R/*
 !/R/charts.R
+!/R/chat_plots.R
 !/R/config.R
+!/R/connect_access.R
 !/R/context_archive.R
 !/R/email_preview.R
 !/R/feedback.R

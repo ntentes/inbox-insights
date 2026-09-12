@@ -16,6 +16,7 @@ source(here::here("R", "snapshot_pin.R"))
 source(here::here("R", "live_session.R"))
 source(here::here("R", "headline_history.R"))
 source(here::here("R", "theme.R"))
+source(here::here("R", "chat_plots.R"))
 
 board <- inbox_board()
 snapshot <- current_snapshot(board)
@@ -155,6 +156,8 @@ server <- function(input, output, session) {
     if (length(repl_tools)) {
       files_prefix <- paste0("replfiles-", session$token)
       addResourcePath(files_prefix, scratch$dir)
+      # A plot the model prints rather than saves is written there too.
+      repl_tools <- lapply(repl_tools, capture_repl_plots, dir = scratch$dir, files_prefix = files_prefix)
     }
   }
 
@@ -165,7 +168,11 @@ server <- function(input, output, session) {
   if (length(repl_tools)) client$set_tools(repl_tools)
 
   observeEvent(input$chat_user_input, {
-    chat_append("chat", client$stream_async(input$chat_user_input))
+    stream <- client$stream_async(input$chat_user_input)
+    # Images in the reply are pointed at the served file, or replaced by a note
+    # when the file is missing. See R/chat_plots.R.
+    if (!is.null(files_prefix)) stream <- rewrite_plot_stream(stream, scratch$dir, files_prefix)
+    chat_append("chat", stream)
   })
 
   observeEvent(input$reset, {
