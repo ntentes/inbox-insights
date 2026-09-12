@@ -2,13 +2,11 @@
 #
 # A REPL on a schedule is an open-ended loop with a bill attached. Two caps and
 # one warning: the warning asks the model to finish what it has, the caps stop
-# the run regardless. Nothing here retries or second-guesses the counter.
-#
-# The warning has to travel inside a tool result, because that is the only
-# channel back to the model mid-conversation. ellmer's on_tool_result callback
-# sees every result but cannot change what the model receives -- its return
-# value is discarded -- so the notice is attached by the tools themselves:
-# check_token_budget() sets it aside, and every tool passed through
+# the run regardless. Nothing here retries or second-guesses the counter. The
+# warning travels inside a tool result, the only channel back to the model
+# mid-conversation. ellmer's on_tool_result callback sees every result but its
+# return value is discarded, so it cannot change what the model receives. So
+# check_token_budget() sets the notice aside, and every tool passed through
 # deliver_budget_notice() appends it to its next reply, once.
 
 token_budget <- function(input_cap, output_cap, warn_at = 0.8, call_cap = Inf) {
@@ -28,7 +26,7 @@ token_budget <- function(input_cap, output_cap, warn_at = 0.8, call_cap = Inf) {
 # `input`, `output` and `cached_input` columns. Input is billed on every turn,
 # so the sum is what the run costs, not the size of the context. Cached input
 # is billed too, at a lower rate, and Anthropic reports it separately from
-# `input`; leaving it out would undercount every turn after the first.
+# `input`. Leaving it out would undercount every turn after the first.
 check_token_budget <- function(budget, usage) {
   if (is.null(usage) || !nrow(usage)) return(invisible(budget))
   count <- function(x) format(x, big.mark = ",", scientific = FALSE, trim = TRUE)
@@ -73,12 +71,10 @@ count_tool_call <- function(budget) {
   invisible(budget)
 }
 
-# The tool keeps its name, description and argument types; only what it
-# returns changes, and only while a notice is waiting.
-#
+# Only what the tool returns changes, and only while a notice is waiting.
 # do.call() with evaluated values rather than inner(...): the tools mcptools
 # builds recover their arguments with match.call(), which cannot see through a
-# forwarded `...`. This is also how ellmer itself invokes a tool.
+# forwarded `...`. ellmer itself invokes tools the same way.
 deliver_budget_notice <- function(tool, budget) {
   inner <- S7::S7_data(tool)
   S7::S7_data(tool) <- function(...) {

@@ -1,12 +1,9 @@
-# The reader's side of the loop.
-#
-# Opens on the latest live report's headlines from the shared board, takes a
-# correction about one of them, and saves it as pending feedback. Approving a
-# correction as a standing directive, in the reviewer's words or as the approver
-# edits them, is a separate, explicit action on its own tab, bound to the state
-# the approver was shown. Nothing here reaches a prompt until then:
-# context_archive() decides what the model may know, and it never includes
-# pending feedback.
+# The reader's side of the loop. Opens on the latest live report's headlines,
+# takes a correction about one, and saves it as pending feedback. Approving a
+# correction as a standing directive is a separate explicit action on its own
+# tab, bound to the state the approver was shown. Nothing reaches a prompt
+# until then: context_archive() decides what the model may know and never
+# includes pending feedback.
 #
 # Locally this file is apps/feedback/app.R; deploy.R stages it at the root of
 # the Connect bundle next to the R/ and prep/ files it sources.
@@ -204,8 +201,8 @@ server <- function(input, output, session) {
     approval <- if (!length(pending)) {
       p(class = "text-muted-warm", "Nothing pending. Save a correction on the first tab to approve it.")
     } else {
-      # The state hash the approver is looking at. approve_directive() refuses to
-      # approve against a state that has changed since.
+      # The state hash the approver is looking at. approve_directive() refuses
+      # to approve against a state that has changed since.
       shown_state_id(report_hash(state))
       choices <- stats::setNames(
         vapply(pending, `[[`, character(1), "feedback_id"),

@@ -1,31 +1,27 @@
 # The house recipes.
 #
-# Five functions for the five things anybody actually asks this data. They exist
-# because the alternative -- everyone writing their own group_by and summarise
-# from scratch each time -- is how you end up with four numbers for one question
-# and no way to tell which is right.
+# Five functions for the five things people actually ask this data. Without
+# them everyone writes their own group_by and summarise, and one question ends
+# up with four numbers and no way to tell which is right.
 #
-# The design rule is that the correct calculation should be the easy one, and the
-# incorrect calculation should be difficult to reach by accident. So conversion is
-# anchored on entry, durations respect the eligibility flags without being asked,
-# grouping by an attribute that cannot support a full-funnel denominator is an
-# error rather than a warning, and the multi-value column has one function whose
-# name says out loud that it counts touches instead of leads.
-#
-# Every recipe reports its own denominator. A rate you cannot check is a rate
-# nobody should have to trust.
+# The design rule: the correct calculation is the easy one, and the incorrect
+# one is hard to reach by accident. Conversion is anchored on entry. Durations
+# respect the eligibility flags without being asked. Grouping by an attribute
+# that cannot support a full-funnel denominator is an error, not a warning. The
+# multi-value column has one function whose name says it counts touches, not
+# leads. Every recipe reports its own denominator, because a rate you cannot
+# check is a rate nobody should have to trust.
 
 library(dplyr)
 
 # require_snapshot() and the cutoff contract it enforces.
 source(here::here("R", "snapshot.R"))
 
-# Grouping by one of these silently changes the question. The late_ columns are
-# only populated for leads that got far enough down the funnel, so grouping a
-# full-funnel denominator by one of them quietly restricts the denominator to
-# leads that qualified. campaigns holds several values per lead, so grouping by
-# it without splitting compares whole combinations, and splitting it first
-# double-counts leads.
+# Grouping by one of these silently changes the question. late_ columns are
+# only populated for leads that got far enough down the funnel, so grouping by
+# one restricts a full-funnel denominator to leads that qualified. campaigns
+# holds several values per lead: grouping without splitting compares whole
+# combinations, and splitting first double-counts leads.
 unsafe_grouping_columns <- function(cohort) {
   c(grep("^late_", names(cohort), value = TRUE), "campaigns")
 }
@@ -48,15 +44,12 @@ check_grouping <- function(cohort, by) {
   )
 }
 
-# Pick the outcome column, and refuse the combination that quietly produces a
-# funnel nobody ever observed.
-#
-# A table carrying won_eventually is the full cohort, which means its stage dates
-# run past the as-of date too. Reading won_as_of off it while reading the stage
-# dates at face value mixes a censored outcome with uncensored progression: the
-# won count is what was known in June and the qualified count includes leads that
-# qualified in August. That is not a snapshot and not hindsight, it is neither.
-
+# Pick the outcome column, and refuse the combination that produces a funnel
+# nobody observed. A table with won_eventually is the full cohort, so its stage
+# dates run past the as-of date too. Reading won_as_of off it mixes a censored
+# outcome with uncensored progression: the won count is what was known in June,
+# the qualified count includes leads that qualified in August. That is neither
+# a snapshot nor hindsight.
 outcome_column <- function(cohort, basis) {
   has_hindsight <- "won_eventually" %in% names(cohort)
 
@@ -83,24 +76,21 @@ outcome_column <- function(cohort, basis) {
 
 # --- Conversion -------------------------------------------------------------
 
-# Entry-to-won conversion. The denominator is leads that entered, always, because
-# that is the only denominator every lead qualifies for.
+# Entry-to-won conversion. The denominator is always leads that entered,
+# because that is the only denominator every lead qualifies for.
 #
-# within_days is the argument that matters, and it does two things at once
-# on purpose. It drops leads that have not yet had that long to convert, and it
-# stops counting wins that arrived later than that. Both halves are necessary. Do
-# only the first and an eighteen-month-old cohort still gets eighteen months of
-# wins while a four-month-old cohort gets four, so the series slopes downward with
-# recency and the trap is intact. Measuring every cohort over the same window
-# from entry is the only comparison that answers the question people think they
-# are asking.
+# within_days does two things on purpose. It drops leads that have not yet had
+# that long to convert, and it stops counting wins that arrived later. Both
+# halves are needed. Do only the first and an eighteen-month-old cohort still
+# gets eighteen months of wins while a four-month-old cohort gets four, so the
+# series slopes downward with recency. Measuring every cohort over the same
+# window from entry is the only comparison that answers the question people
+# mean to ask. NULL gives the raw snapshot rate: correct about what has
+# happened so far, not comparable across cohorts of different ages.
 #
-# Leave it NULL and you get the raw snapshot rate: correct as a statement about
-# what has happened so far, and not comparable across cohorts of different ages.
-#
-# basis = "eventual" uses hindsight and is for the explanatory chart and the tests
-# only. It is never available on a snapshot, because funnel_snapshot() drops the
-# column it needs.
+# basis = "eventual" uses hindsight and is for the explanatory chart and the
+# tests only. It is never available on a snapshot, because funnel_snapshot()
+# drops the column it needs.
 conversion_by <- function(cohort,
                           by = NULL,
                           within_days = NULL,
@@ -109,10 +99,10 @@ conversion_by <- function(cohort,
   check_grouping(cohort, by)
   outcome <- outcome_column(cohort, basis)
 
-  # Group sizes are recorded before the age filter, so the result can report how
-  # much of each group survived it. Without that, a young cohort trimmed down to
-  # a handful of its earliest leads reports a perfectly respectable-looking rate
-  # on almost no data, and the reader has no way to notice.
+  # Group sizes are recorded before the age filter, so the result can report
+  # how much of each group survived it. Otherwise a young cohort trimmed to a
+  # handful of early leads reports a respectable rate on almost no data, and
+  # the reader has no way to notice.
   eligible <- mutate(cohort, .group_leads = n(), .by = all_of(by))
 
   if (is.null(within_days)) {
@@ -144,11 +134,9 @@ conversion_by <- function(cohort,
   result
 }
 
-# Conversion by entry month.
-#
-# complete_months_only defaults to TRUE because a partial month is not a cohort,
-# it is a cohort in progress, and putting it on the same axis as finished months
-# invites exactly the comparison this whole exercise is about avoiding.
+# Conversion by entry month. complete_months_only defaults to TRUE because a
+# partial month is a cohort in progress, and putting it beside finished months
+# invites the comparison this whole exercise exists to avoid.
 cohort_conversion <- function(cohort,
                               complete_months_only = TRUE,
                               within_days = NULL,
@@ -168,12 +156,10 @@ cohort_conversion <- function(cohort,
 
 # --- Durations --------------------------------------------------------------
 
-# Median days from entry to a stage, over the leads whose dates for that stage
-# were actually recorded rather than backfilled.
-#
-# The excluded count comes back alongside the median, unasked. If a quarter of
-# the leads dropped out of the denominator, whoever reads the number should find
-# that out at the same time as the number.
+# Median days from entry to a stage, over leads whose dates for that stage were
+# recorded rather than backfilled. The excluded count comes back alongside the
+# median, unasked: if a quarter of the leads dropped out of the denominator,
+# the reader should learn that with the number.
 median_days_to <- function(cohort, stage = c("won", "opportunity", "qualified"), by = NULL) {
   stage <- match.arg(stage)
   check_grouping(cohort, by)
@@ -184,9 +170,9 @@ median_days_to <- function(cohort, stage = c("won", "opportunity", "qualified"),
 
   # Reaching the stage is decided by the stage date, not by whether a duration
   # could be computed from it. Filtering on the duration first would drop the
-  # backdated records -- the ones whose qualification predates their arrival --
-  # before they could be counted as excluded, so the two records the exclusion
-  # count most needs to report would vanish from both sides of it.
+  # backdated records (qualification before arrival) before they could be
+  # counted as excluded. The records the exclusion count most needs to report
+  # would vanish from both sides of it.
   cohort |>
     filter(!is.na(.data[[stage_date]])) |>
     summarise(
@@ -209,10 +195,9 @@ median_days_to <- function(cohort, stage = c("won", "opportunity", "qualified"),
 stage_funnel <- function(cohort, by = NULL, basis = c("as_of", "eventual")) {
   basis <- match.arg(basis)
   check_grouping(cohort, by)
-  # Every stage in the result has to come from the same table, so the guard here
-  # is doing more work than picking a column name: it rejects the full cohort
-  # under basis = "as_of", where the stage dates and the outcome disagree about
-  # what date it is.
+  # Every stage has to come from the same table, so the guard does more than
+  # pick a column name: it rejects the full cohort under basis = "as_of", where
+  # the stage dates and the outcome disagree about what date it is.
   outcome <- outcome_column(cohort, basis)
 
   cohort |>
@@ -237,14 +222,11 @@ stage_funnel <- function(cohort, by = NULL, basis = c("as_of", "eventual")) {
 
 # --- The multi-value column -------------------------------------------------
 
-# The only sanctioned way to look at campaigns.
-#
-# It returns touches, not leads, and the column is named that way so the number
-# cannot be quietly reused as a lead count. The totals do not sum to the number
-# of leads and they are not supposed to: one lead touched by three campaigns is
-# three touches. Anything phrased as "what share of our leads came from campaign
-# X" has no answer in this data, and the honest response is to say so rather than
-# to divide by something.
+# The only sanctioned way to look at campaigns. It returns touches, not leads,
+# and the column is named so the number cannot be reused as a lead count. The
+# totals do not sum to the number of leads: one lead touched by three campaigns
+# is three touches. "What share of our leads came from campaign X" has no answer
+# in this data. Say so rather than divide by something.
 campaign_reach <- function(cohort) {
   cohort |>
     select(lead_id, campaigns, won_as_of) |>

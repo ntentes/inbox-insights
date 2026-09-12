@@ -8,17 +8,12 @@ report_object <- function(properties, description = NULL) {
   )
 }
 
-# An insight's kind is inferred from the field names of its evidence rows.
-#
-# Dispatching on shape rather than on a declared kind field is deliberate.
-# report_object() marks every property required with additionalProperties =
-# FALSE, so adding a field would change the serialisation of every existing
-# report, move its hash, and invalidate the captured human approvals that
-# reference it. Shape dispatch leaves them byte-identical.
-#
-# The cost is that the mapping is implicit, so it is pinned by tests: every kind
-# must have a distinct field set, and an unrecognised shape must be refused
-# rather than waved through.
+# An insight's kind is inferred from the field names of its evidence rows, not
+# from a declared kind field. report_object() makes every property required
+# with additionalProperties = FALSE, so adding a field would change every
+# report's serialisation, move its hash, and invalidate the captured human
+# approvals that reference it. The mapping is implicit, so tests pin it: every
+# kind has a distinct field set, and an unrecognised shape is refused.
 INSIGHT_EVIDENCE_FIELDS <- list(
   cohort_conversion = c(
     "cohort_month", "leads", "won", "conversion", "share_of_group_observed"
@@ -30,7 +25,7 @@ INSIGHT_EVIDENCE_FIELDS <- list(
 insight_kind <- function(insight) {
   if (!is.list(insight$evidence) || !length(insight$evidence) ||
       !is.list(insight$evidence[[1]]) || is.null(names(insight$evidence[[1]]))) {
-    # Let the schema produce the error, so malformed input keeps its old message.
+    # Let the schema produce the error so malformed input keeps its old message.
     return("cohort_conversion")
   }
   fields <- names(insight$evidence[[1]])
@@ -166,23 +161,18 @@ worked_time_contract <- function(snapshot) {
   )
 }
 
-# The snippet the email tells the reader to run.
+# The snippet the email tells the reader to run. It must work for someone who
+# has the data and none of this repo, so it loads its own libraries, reads the
+# snapshot from a pin the reader points at, and does the arithmetic in plain
+# dplyr. An earlier version called cohort_conversion() from R/recipes.R, which
+# made "reproduce the evidence" mean "clone our repository first". Spelling the
+# metric out longhand also stops the definition being taken on trust from a
+# function name.
 #
-# It has to work for somebody who has the data and none of this repo. The
-# earlier version called cohort_conversion() and snapshot_cutoff(), which live
-# in R/recipes.R -- so "reproduce the evidence" meant "clone our repository
-# first", which is not reproducibility, it is an advertisement.
-#
-# So the snippet now loads its own libraries, reads the snapshot from a pin the
-# reader points at, and does the arithmetic in plain dplyr. Spelling the metric
-# out longhand is a side benefit: the definition stops being something you have
-# to take on trust from a function name.
-#
-# Split into a preamble and a pipeline because the pipeline is executed in
-# tests/testthat/test-report-contract.R and checked against the evidence it
-# claims to produce. The preamble cannot be executed -- it points at a board
-# that does not exist -- and an untested snippet in an email headed "reproduce
-# the evidence" is exactly the kind of claim this repo is not supposed to make.
+# Split into a preamble and a pipeline because tests execute the pipeline and
+# check it against the evidence it claims to produce. The preamble points at a
+# board that does not exist, so it cannot run, and an untested snippet under
+# "reproduce the evidence" is a claim this repo must not make.
 worked_evidence_preamble <- function() {
   paste(
     "# Reproduce the table above from the same frozen snapshot.",
@@ -272,15 +262,12 @@ worked_evidence <- function(snapshot, outcome_horizon) {
 
 # --- Insights whose evidence is not monthly cohorts -------------------------
 
-# The two additional insights describe the funnel as a whole rather than one
-# month, so they use every complete entry month rather than the four the cohort
-# comparison uses.
-#
-# That is a correctness choice, not convenience. Restricting a duration measure
-# to recent months censors exactly what it measures: only the fast deals have
-# landed yet, so a short window makes slow segments look faster than they are.
-# Enterprise on the four-month window has two wins inside 30 days out of 575
-# leads, which is not evidence of anything.
+# The two additional insights describe the funnel as a whole, so they use every
+# complete entry month rather than the four the cohort comparison uses. That is
+# a correctness choice. Restricting a duration measure to recent months censors
+# what it measures: only the fast deals have landed, so a short window makes
+# slow segments look faster than they are. Enterprise on the four-month window
+# has two wins inside 30 days out of 575 leads, which is not evidence.
 complete_months_contract <- function(snapshot) {
   cutoff <- require_snapshot(snapshot)
   current_month <- as.Date(format(cutoff, "%Y-%m-01"))
@@ -387,9 +374,8 @@ insight_kinds <- function() {
       code = function(snapshot, insight) {
         worked_evidence_code(snapshot, insight$outcome_horizon)
       },
-      # The runnable half, without the placeholder preamble. Exposed so tests
-      # can execute it against a real snapshot; the preamble points at a board
-      # that deliberately does not exist.
+      # The runnable half, without the placeholder preamble, so tests can
+      # execute it against a real snapshot.
       pipeline = function(snapshot, insight) {
         worked_evidence_pipeline(
           worked_time_contract(snapshot)$months, insight$outcome_horizon
@@ -434,8 +420,8 @@ validate_insight <- function(insight, snapshot) {
   if (!isTRUE(all.equal(actual, expected, tolerance = 1e-12))) {
     stop("Reported evidence does not reproduce from the snapshot.", call. = FALSE)
   }
-  # Do not evaluate submitted code. This fixture path accepts the known recipe
-  # expression only; a general REPL execution boundary belongs to the live branch.
+  # Never evaluate submitted code. This fixture path accepts the known recipe
+  # expression only; a general execution boundary belongs to the live branch.
   if (!identical(insight$reproducible_code, spec$code(snapshot, insight))) {
     stop("Reproducible code must match the worked recipe expression.", call. = FALSE)
   }
@@ -525,17 +511,12 @@ read_example_report <- function(path, snapshot) {
 # --- Headline metrics -------------------------------------------------------
 
 # Counts of events dated inside the reporting period, against the 28 days
-# before it.
-#
-# These are the only numbers in the email with no interpretation attached, which
-# is the point of putting them at the top: everything above the insights is
-# arithmetic the reader can redo, everything below is a claim about it.
-#
-# They are counts of events in a closed window, never a cohort rate. That
-# distinction is what keeps them out of the trap the rest of the email is about:
-# both windows are entirely in the past, so both are fully observed and the
-# comparison is between equals. A conversion rate here would be the same mistake
-# the first-run email makes, printed in a bigger font.
+# before it. These are the only numbers in the email with no interpretation
+# attached, which is why they sit at the top: everything above the insights is
+# arithmetic the reader can redo, everything below is a claim about it. They
+# are counts in a closed window, never a cohort rate. Both windows are entirely
+# in the past, so both are fully observed and the comparison is between equals.
+# A conversion rate here would repeat the first-run email's mistake.
 HEADLINE_METRIC_LABELS <- c(
   "Leads entered", "Qualified", "Opportunities", "Deals won"
 )
@@ -607,11 +588,12 @@ headline_metrics_schema <- function() {
 
 # --- The weekly email: several insights in one envelope ---------------------
 
-# A separate envelope rather than a plural field on the existing one. Adding
-# `insights` to the single-insight report would change its serialisation, move
-# its hash, and invalidate the captured human approvals that reference it. The
-# two share every other field and all of the per-insight validation.
-# Two versions of the same email: what the first run produced, and what it
+# A separate envelope rather than a plural field on the single-insight report.
+# Adding `insights` there would change its serialisation, move its hash, and
+# invalidate the captured human approvals that reference it. The two share
+# every other field and all per-insight validation.
+#
+# Two purposes for the same email: what the first run produced, and what it
 # produced after the correction was approved. Only the lead insight differs, so
 # the change the rule made is the change the reader sees.
 WEEKLY_REPORT_PURPOSE <- "weekly_email"
@@ -641,10 +623,10 @@ validate_weekly_report <- function(report, snapshot) {
     stop("Report version, company, or snapshot identity does not match.", call. = FALSE)
   }
 
-  # A corrected weekly email is the output the standing rule governs, so it may
-  # not be built without naming the rule and the archive it came from. The
-  # first-run version must claim the opposite just as strictly: it predates the
-  # approval, and an email that implied otherwise would misrepresent the loop.
+  # A corrected weekly email is the output the standing rule governs, so it must
+  # name the rule and the archive it came from. The first-run version must claim
+  # the opposite just as strictly: it predates the approval, and implying
+  # otherwise would misrepresent the loop.
   if (corrected) {
     if (is.null(report$archive_id) || !length(report$applied_rule_ids)) {
       stop(
@@ -666,8 +648,8 @@ validate_weekly_report <- function(report, snapshot) {
     }
   }
 
-  # The headline metrics are held to the same standard as the evidence: they
-  # must reproduce from the snapshot, or they do not go in the email.
+  # Headline metrics are held to the same standard as the evidence: they must
+  # reproduce from the snapshot or they do not go in the email.
   validate_report_value(
     report$headline_metrics, headline_metrics_schema(), "headline_metrics"
   )
@@ -690,8 +672,8 @@ validate_weekly_report <- function(report, snapshot) {
       call. = FALSE
     )
   }
-  # The cohort comparison leads in both versions, because it is the one the
-  # approved rule changed. An email that buried it would not show the change.
+  # The cohort comparison leads in both versions because it is the one the
+  # approved rule changed. Burying it would hide the change.
   expected_horizon <- if (corrected) "30_days" else "snapshot"
   if (!identical(kinds[[1]], "cohort_conversion") ||
       !identical(report$insights[[1]]$outcome_horizon, expected_horizon)) {

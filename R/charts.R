@@ -66,17 +66,13 @@ equal_30_day_chart_data <- function(snapshot) {
     dplyr::arrange(cohort_month)
 }
 
-# A small chart of a report's own evidence, for embedding in the email.
-#
-# It draws from insight$evidence rather than recomputing from the snapshot, and
-# that is the whole design. validate_insight() already asserts those rows
-# reproduce from the snapshot, so the chart cannot disagree with the table
-# printed beside it, and it cannot contain anything the report did not have --
-# there is no path here through which hindsight could arrive.
-#
-# Which is the point. The explanatory chart on slide 7 plots won_eventually and
-# is tagged explanatory_only_not_for_reports; it must never appear inside a
-# report. This one is structurally incapable of showing that.
+# A small chart of a report's own evidence, for embedding in the email. It
+# draws from insight$evidence rather than recomputing from the snapshot.
+# validate_insight() already asserts those rows reproduce, so the chart cannot
+# disagree with the table beside it and cannot contain anything the report did
+# not have. In particular no hindsight can reach it: the explanatory chart on
+# slide 7 plots won_eventually and is tagged explanatory_only_not_for_reports,
+# and this chart is structurally incapable of showing that.
 insight_evidence_chart <- function(insight) {
   switch(insight_kind(insight),
     cohort_conversion = cohort_evidence_chart(insight),
@@ -121,8 +117,8 @@ stage_evidence_chart <- function(insight) {
     data.frame(stage = row$stage, leads = row$leads, share = row$share_of_entered)
   }))
   data$stage <- factor(data$stage, levels = rev(data$stage))
-  # The accent marks where the largest single loss happens, which is the point
-  # of the insight rather than the funnel's overall shape.
+  # The accent marks the largest single loss, which is the point of the insight
+  # rather than the funnel's overall shape.
   biggest_loss <- as.character(data$stage[which.max(-diff(c(data$leads[1], data$leads)))])
 
   ggplot2::ggplot(data, ggplot2::aes(leads, stage)) +
@@ -263,8 +259,7 @@ chart_highlight <- function(data) {
     ),
     inherit.aes = FALSE,
     # The one place the accent appears in a chart. The band marks the cohort
-    # under discussion, which is exactly the "one thing that matters per view"
-    # the accent is reserved for.
+    # under discussion, the one thing per view the accent is reserved for.
     fill = inbox_chart_colours()$highlight, alpha = 0.25
   )
 }
@@ -303,8 +298,8 @@ plot_as_of_conversion <- function(data) {
       expand = ggplot2::expansion(mult = c(0, 0))
     ) +
     ggplot2::scale_colour_manual(
-      # Ink for what was actually known; muted grey for the hindsight series,
-      # which is explanatory and must not look like the headline.
+      # Ink for what was known; muted grey for the hindsight series, which is
+      # explanatory and must not look like the headline.
       values = unname(unlist(inbox_chart_colours()[c("primary", "secondary")])),
       name = NULL
     ) +

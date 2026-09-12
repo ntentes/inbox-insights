@@ -1,12 +1,10 @@
 source(here::here("R", "live_report.R"))
 
-# What the weekly report leaves behind for the next one, and for the apps.
-#
-# One pin, one row per headline per run. The next run reads it so the model
-# knows what has already been said; the chat and feedback apps read it so they
-# open on the report the reader has in front of them. Full reports stay in
-# artifacts/live/; this is the flat view that a prompt and a Shiny table both
-# want.
+# What the weekly report leaves behind: one pin, one row per headline per run.
+# The next run reads it so the model knows what has already been said. The
+# chat and feedback apps read it so they open on the report the reader has in
+# front of them. Full reports stay in artifacts/live/; this is the flat view a
+# prompt and a Shiny table both want.
 
 HEADLINE_HISTORY_PIN <- "weekly-headlines"
 
@@ -71,7 +69,6 @@ append_headline_history <- function(board, report, snapshot) {
   invisible(updated)
 }
 
-# The newest run only, in slot order.
 latest_headlines <- function(history) {
   if (!nrow(history)) return(history)
   rows <- history[history$generated_at == max(history$generated_at), ]

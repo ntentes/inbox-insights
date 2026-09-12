@@ -4,8 +4,8 @@ GUIDANCE_PIN <- "demo-guidance"
 
 # The one rule approved before directives existed. The captured worked example
 # in fixtures/worked_example.json was approved and reviewed under it, and the
-# corrected report is built on the outcome horizon it carries, so it is still
-# read exactly as recorded. Nothing creates another one.
+# corrected report is built on its outcome horizon, so it is still read exactly
+# as recorded. Nothing creates another one.
 WORKED_RULE_ID <- "incomplete-cohort-30-days-v1"
 
 approval_time <- function() {
@@ -29,9 +29,9 @@ feedback_schema <- function() {
   ))
 }
 
-# A directive is a reviewer's correction, approved in the reviewer's words or as
-# the approver edited them, and from then on part of what every report and chat
-# is told. Its id is a hash of the approved text, so a directive edited after
+# A directive is a reviewer's correction, approved as written or as the
+# approver edited it, and from then on part of what every report and chat is
+# told. Its id is a hash of the approved text, so a directive edited after
 # approval is refused rather than quietly obeyed.
 directive_schema <- function() {
   text <- list(type = "string")

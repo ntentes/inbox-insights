@@ -1,26 +1,22 @@
-# One visual identity, consumed by the email preview, the approval previews, the
-# charts and both Shiny apps.
+# One visual identity for the email preview, the approval previews, the charts
+# and both Shiny apps. The brief is near-monochrome: the logo carries the
+# colour, the interface does not compete with it, and a single accent marks the
+# one thing that matters in a view. These artifacts appear on slides next to
+# charts, and an interface with its own palette fights the evidence. Every
+# colour except the hairline greys comes from images/chickencloud-logo.svg, so
+# the palette and the logo cannot drift apart.
 #
-# The brief is near-monochrome: the logo carries the colour, the interface does
-# not compete with it, and a single accent marks the one thing that matters in
-# any given view. That is a design decision with a practical payoff -- these
-# artifacts appear on slides next to charts, and an interface with its own
-# palette fights the evidence it is supposed to be presenting.
-#
-# Every colour except the hairline greys is lifted from images/chickencloud-logo.svg,
-# so the palette and the logo cannot drift apart.
-#
-# Deviation from the plan's tree, which names apps/theme.R: the email preview and
-# the charts both live in R/ and both consume this, so a file under apps/ would
-# have R/ depending on apps/. The Shiny-specific part is inbox_bs_theme() below.
+# The plan's tree names apps/theme.R, but the email preview and the charts live
+# in R/ and consume this too, and R/ must not depend on apps/. The
+# Shiny-specific part is inbox_bs_theme() below.
 
 source(here::here("R", "config.R"))
 
 # --- Contrast ---------------------------------------------------------------
 
 # WCAG 2.1 relative luminance and contrast ratio. Kept here rather than in the
-# tests because the palette comments quote its output, and a number quoted from
-# a function nobody can run is a number nobody will re-check.
+# tests because the palette comments quote its output, and a number nobody can
+# recompute is a number nobody will re-check.
 inbox_relative_luminance <- function(hex) {
   channels <- grDevices::col2rgb(hex)[, 1] / 255
   linear <- ifelse(
@@ -39,19 +35,16 @@ inbox_contrast_ratio <- function(foreground, background) {
 
 # --- Palette ----------------------------------------------------------------
 
-# Ratios below are against `page` and are asserted in tests/testthat/test-theme.R,
-# because §19 lists contrast as a release requirement and a palette nobody checks
-# is a palette that quietly fails on a projector.
+# Ratios below are against `page`. tests/testthat/test-theme.R asserts them
+# because §19 lists contrast as a release requirement.
 INBOX_PALETTE <- list(
   # The logo wordmark and outline. Reads as a warm near-black. 12.0:1.
   ink = "#243B34",
   # The logo's ears. Secondary text, axis labels, captions. 6.4:1.
   muted = "#59615A",
-  # The dog's coat.
-  #
-  # DECORATION ONLY -- 2.67:1, which fails AA at every size. It may fill a
-  # highlight band, draw a left border or rule a heading. It may never carry
-  # text. accent_ink exists for when the accent has to be readable.
+  # The dog's coat. DECORATION ONLY: 2.67:1 fails AA at every size. It may fill
+  # a highlight band, draw a left border or rule a heading, never carry text.
+  # Use accent_ink when the accent has to be readable.
   accent = "#BD986B",
   # The same hue darkened until it passes AA for body text. 5.75:1.
   accent_ink = "#7A6242",
@@ -59,8 +52,8 @@ INBOX_PALETTE <- list(
   # A warm off-white so surfaces read as paper rather than as grey panels.
   surface = "#FBF8F1",
   code_surface = "#F4F1E8",
-  # Hairlines. Not from the logo -- rules are not branding, and a logo colour
-  # here would be too heavy at 1px.
+  # Hairlines. Not from the logo: rules are not branding, and a logo colour
+  # would be too heavy at 1px.
   rule = "#E4DED2",
   rule_strong = "#C9C1B1"
 )
@@ -79,13 +72,11 @@ inbox_mono_stack <- paste(
 
 # --- HTML previews ----------------------------------------------------------
 
-# Shared CSS for the rendered email and the approval replays.
-#
-# A <style> block rather than inlined attributes. Real email clients need CSS
-# inlined on every element, but these are previews rendered in a browser and
-# screenshotted for slides, and inlining would make the generating R code far
-# harder to read for no benefit on screen. Production email delivery is later
-# work; when it arrives it inlines from these same tokens.
+# Shared CSS for the rendered email and the approval replays. A <style> block
+# rather than inlined attributes: these are previews rendered in a browser and
+# screenshotted for slides, and inlining would make the generating R code much
+# harder to read for no benefit on screen. Mail delivery inlines the same
+# tokens; see inbox_email_styles() below.
 inbox_preview_css <- function(max_width = "820px") {
   p <- INBOX_PALETTE
   paste(
@@ -103,15 +94,15 @@ inbox_preview_css <- function(max_width = "820px") {
     "h3 { font-size: 16px; margin: 28px 0 8px; }",
     "p { margin: 0 0 14px; }",
 
-    # The small uppercase label that opens a section. Does a lot of the work of
-    # making this look designed rather than typed.
+    # The small uppercase label that opens a section. Most of what makes this
+    # look designed rather than typed.
     sprintf(".label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.09em;"),
     sprintf("  text-transform: uppercase; color: %s; margin: 0 0 6px; }", p$muted),
     sprintf(".muted { color: %s; }", p$muted),
     ".small { font-size: 14px; }",
 
-    # Header. A two-cell table rather than a flex row, because the same markup
-    # is the email and mail clients lay out tables and nothing else.
+    # Header. A two-cell table rather than a flex row: the same markup is the
+    # email, and mail clients lay out tables and nothing else.
     sprintf(".masthead { width: 100%%; border-collapse: collapse; border-bottom: 2px solid %s; }", p$ink),
     ".masthead td { padding: 0 0 20px; vertical-align: middle; }",
     ".masthead img { display: block; width: 210px; height: auto; }",
@@ -135,9 +126,8 @@ inbox_preview_css <- function(max_width = "820px") {
     ".callout p:last-child { margin-bottom: 0; }",
     sprintf(".callout-quiet { border-left-color: %s; }", p$rule_strong),
 
-    # The deterministic headline strip. Counts only, and deliberately not
-    # colour-coded: a red -12% would assert a problem the insights below argue
-    # you cannot conclude from a snapshot.
+    # The deterministic headline strip. Counts only, and not colour-coded: a red
+    # -12% would assert a problem the insights below say a snapshot cannot show.
     ".stats { width: 100%; border-collapse: collapse; margin: 26px 0 6px; }",
     ".stats td { padding: 0 10px 0 0; vertical-align: top; width: 25%; }",
     ".stats td:last-child { padding-right: 0; }",
@@ -173,12 +163,11 @@ inbox_preview_css <- function(max_width = "820px") {
   )
 }
 
-# The same rules as inbox_preview_css(), as inline style strings.
-#
-# Mail clients drop <style> blocks, or parts of them, and none of them lay out
-# flexbox, so the email carries every rule on the element it applies to and
-# uses tables where the CSS used flex. The page gets the same markup: an inline
-# style and a stylesheet rule that agree cannot make two designs.
+# The same rules as inbox_preview_css(), as inline style strings. Mail clients
+# drop <style> blocks, or parts of them, and none lay out flexbox, so the email
+# carries every rule on its element and uses tables where the CSS used flex.
+# The page gets the same markup: an inline style and a stylesheet rule that
+# agree cannot make two designs.
 inbox_email_styles <- function() {
   p <- INBOX_PALETTE
   cell <- function(align, extra = "") {
@@ -235,7 +224,7 @@ inbox_email_styles <- function() {
 # --- Charts -----------------------------------------------------------------
 
 # Series colours. Ink is the series that is true; muted grey is the one that is
-# explanatory or hypothetical. Reserving the accent for the highlight band means
+# explanatory or hypothetical. The accent is reserved for the highlight band so
 # the eye lands on the cohort under discussion rather than on a line.
 inbox_chart_colours <- function() {
   list(
@@ -279,10 +268,10 @@ inbox_theme_ggplot <- function(base_size = 16) {
       legend.text = ggplot2::element_text(size = ggplot2::rel(0.8), colour = p$ink),
       legend.margin = ggplot2::margin(t = 2),
       # Wide enough for a dash pattern to be legible in the key. In a
-      # near-monochrome palette the linetype is doing the work of telling two
-      # series apart, so a key too short to show a dash defeats the scheme --
-      # and the alternative, pushing the two colours further apart, costs
-      # contrast on the labels that inherit them.
+      # near-monochrome palette the linetype tells two series apart, so a key
+      # too short to show a dash defeats the scheme. Pushing the two colours
+      # further apart instead would cost contrast on the labels that inherit
+      # them.
       legend.key.width = grid::unit(1.6, "cm"),
       plot.background = ggplot2::element_rect(fill = p$page, colour = NA),
       plot.margin = ggplot2::margin(16, 20, 12, 16)
@@ -291,9 +280,8 @@ inbox_theme_ggplot <- function(base_size = 16) {
 
 # --- Shiny ------------------------------------------------------------------
 
-# The apps get the same tokens through bslib rather than a Bootswatch preset.
-# A preset would bring its own palette, and then the apps and the email would be
-# two designs that happen to sit next to each other.
+# The apps get the same tokens through bslib rather than a Bootswatch preset. A
+# preset would bring its own palette, making the apps and the email two designs.
 inbox_bs_theme <- function() {
   p <- INBOX_PALETTE
   bslib::bs_add_rules(

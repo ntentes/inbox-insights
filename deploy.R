@@ -1,41 +1,38 @@
 # Publish the live runner and the two apps to Posit Connect.
 #
-#   Rscript deploy.R              # the report, the chat app and the feedback app
+#   Rscript deploy.R              # the report, the chat app, the feedback app
 #   Rscript deploy.R report       # or: chat, feedback
 #
 # Needs, in the environment (~/.Renviron is the usual place):
 #   CONNECT_SERVER      the Connect URL
 #   CONNECT_API_KEY     an API key for the publishing account
-#   ANTHROPIC_API_KEY   copied to the report's and the chat's environment on Connect
+#   ANTHROPIC_API_KEY   copied to the report and chat environments on Connect
 # and data/funnel_cohort.csv built (Rscript prep/generate_data.R, then
 # Rscript prep/build_cohort.R).
 #
-# On Connect the three pieces share the Connect board of the publishing
-# account (see inbox_board() in R/config.R); no board setting is deployed. The
-# data travels as a pin, not in the app bundles: the report carries the cohort
-# table and pins the snapshot it works from as funnel-snapshot on every run,
-# the apps read that pin, and this script pins it once at the end of a deploy
-# so the apps work before the first scheduled run.
+# On Connect the three pieces share the publishing account's Connect board
+# (see inbox_board() in R/config.R); no board setting is deployed. Data travels
+# as a pin, not in the app bundles. The report carries the cohort table and
+# pins its snapshot as funnel-snapshot on every run; the apps read that pin.
+# This script pins it once at the end of a deploy so the apps work before the
+# first scheduled run.
 #
-# Connect hosts are Linux, so the macOS mcp-repl from the installer is no use
-# there. This script fetches the Linux release into bin/ (gitignored) and bundles
-# it with the report and the chat; both look there first. The release is pinned
-# to one whose Linux sandbox runs inside a Connect container and whose protocol
-# the current mcptools speaks; neither is true of every release. Delete
-# bin/mcp-repl after changing the pin so the next run fetches the new one, and
-# read the first run's log.
+# Connect hosts are Linux, so the macOS mcp-repl is no use there. This script
+# fetches the Linux release into bin/ (gitignored) and bundles it with the
+# report and the chat. The release is pinned to one whose sandbox runs inside
+# a Connect container and whose protocol the current mcptools speaks; neither
+# holds for every release. After changing the pin, delete bin/mcp-repl so the
+# next run fetches the new one, and read the first run's log.
 #
 # Scheduling and recipients are set in the Connect UI after the first deploy.
-# The email body is the rendered page with every style inline and the logo as a
-# CID attachment (rsc_email_images), so it survives mail clients that strip
-# <style> blocks and data: images.
+# The email body has every style inline and the logo as a CID attachment
+# (rsc_email_images), so it survives clients that strip <style> and data: URIs.
 
 MCP_REPL_RELEASE <- "v0.2.0"
 MCP_REPL_TARGET <- "x86_64-unknown-linux-gnu"
 
 # Everything the Rmd and the apps source, transitively, plus the files those
-# read: the same list .gitignore allows into the repository. config.example.R is
-# here because inbox_root() finds the project by it.
+# read. config.example.R is here because inbox_root() finds the project by it.
 shared_files <- function() {
   c(
     "config.example.R",
@@ -113,11 +110,11 @@ require_env <- function(name) {
   value
 }
 
-# rsconnect keeps its own registry of servers and accounts. The server named
-# in CONNECT_SERVER is registered once; the API key is registered on every run
-# under a fixed alias, so the key in the environment is always the one that
-# deploys. A rotated key replaces the old one, and other accounts registered
-# for the same server are never picked up by accident.
+# rsconnect keeps its own registry of servers and accounts. The server is
+# registered once; the API key is re-registered every run under a fixed alias,
+# so the key in the environment is always the one that deploys. A rotated key
+# replaces the old one, and other accounts on the same server are never picked
+# up by accident.
 DEPLOY_ACCOUNT <- "inbox-insights-deploy"
 
 connect_account <- function(url, api_key) {
@@ -141,10 +138,10 @@ env_vars <- function(target) {
   c(target$env, Filter(function(v) nzchar(Sys.getenv(v)), c("INBOX_CHAT_PROVIDER", "INBOX_CHAT_MODEL")))
 }
 
-# A Shiny app on Connect needs app.R at the root of its bundle, but locally the
-# apps live in apps/<name>/ and source the project's R/ files. So the bundle is
-# staged: app.R at the root, the shared files at their project-relative paths,
-# which is the layout app.R's here::i_am() call expects.
+# Connect needs app.R at the bundle root, but locally the apps live in
+# apps/<name>/ and source the project's R/ files. The bundle is staged with
+# app.R at the root and shared files at project-relative paths, the layout
+# app.R's here::i_am() call expects.
 stage_app <- function(target) {
   stage <- tempfile("inbox-deploy-")
   dir.create(stage)
@@ -192,9 +189,9 @@ deploy <- function(targets = names(deployables)) {
   url <- require_env("CONNECT_SERVER")
   api_key <- require_env("CONNECT_API_KEY")
   if (any(vapply(deployables[targets], function(t) "ANTHROPIC_API_KEY" %in% t$env, logical(1)))) {
-    # The targets that call a model copy ANTHROPIC_API_KEY and no other
-    # credential, so they are Anthropic-only; another provider would deploy
-    # without its key and fail on every scheduled run.
+    # Model-calling targets copy only ANTHROPIC_API_KEY, so they are
+    # Anthropic-only. Another provider would deploy without its key and fail on
+    # every scheduled run.
     provider <- Sys.getenv("INBOX_CHAT_PROVIDER", "anthropic")
     if (!identical(provider, "anthropic")) {
       stop("INBOX_CHAT_PROVIDER is \"", provider, "\" but this deployment is Anthropic-only.",
@@ -221,8 +218,8 @@ deploy <- function(targets = names(deployables)) {
   pin_snapshot_to_connect()
 }
 
-# The same snapshot the report will pin on its first run, written now from the
-# local cohort table so the apps have data to open on straight after a deploy.
+# The same snapshot the report pins on its first run, written now from the
+# local cohort table so the apps have data straight after a deploy.
 pin_snapshot_to_connect <- function() {
   source(here::here("R", "snapshot_pin.R"))
   write_snapshot_pin(inbox_board("connect"), funnel_snapshot(read_funnel_cohort()))

@@ -1,13 +1,10 @@
 # Seeded generator for the synthetic funnel used throughout the talk.
 #
-# Nothing here is a summary statistic. The script simulates the event process --
-# leads arrive, some progress through stages, each transition takes time -- and
-# every pathology the talk relies on falls out of that process rather than being
-# written in by hand. That is the point: anyone who clones the repo can change a
-# parameter and watch the trap move.
-#
-# Deterministic. Re-running it must produce a byte-identical CSV, so the figures
-# quoted in the script and locked by the tests cannot drift.
+# The script simulates the event process: leads arrive, some progress through
+# stages, each transition takes time. Every trap the talk relies on falls out
+# of that process rather than being written in by hand, so anyone can change a
+# parameter and watch the trap move. It is deterministic: re-running must give
+# a byte-identical CSV, so figures quoted in the script cannot drift.
 
 library(dplyr)
 
@@ -15,36 +12,30 @@ source(here::here("R", "config.R"))
 
 INBOX_SEED <- 4817L
 
-# Entries span roughly fourteen months and stop at the as-of date. Outcomes are
-# free to land after it -- censoring happens in prep/build_cohort.R, not here.
+# Entries span about fourteen months and stop at the as-of date. Outcomes may
+# land after it. Censoring happens in prep/build_cohort.R, not here.
 gen_first_entry <- as.Date("2025-05-01")
 gen_last_entry <- INBOX_AS_OF
 
 # --- Arrival ----------------------------------------------------------------
-# Mild growth plus weekday seasonality. The growth is load-bearing: it makes the
-# recent cohorts the large ones, which is what gives the outcome-delay trap
-# enough weight to look like a real decline.
+# Mild growth plus weekday seasonality. The growth matters: it makes the recent
+# cohorts the large ones, which gives the outcome-delay trap enough weight to
+# look like a real decline.
 #
-# The base rate is set for statistical power rather than realism, and it is worth
-# saying why. The talk's correction compares cohorts over an equal window from
-# entry, and the newest complete cohort can only support a 30-day window -- any
-# longer and most of its leads have not aged enough to qualify. A 30-day window
-# catches roughly a third of the wins a cohort eventually gets, so at a few
-# hundred leads per month the corrected comparison rests on about sixteen wins
-# per cohort and swings by a quarter on chance alone.
-#
-# That is fatal for the demonstration rather than merely untidy. The first tuning
-# of this generator produced a newest cohort whose corrected rate was still 40%
-# below its neighbours, entirely from sampling noise, which would have meant
-# showing a correction that visibly corrected nothing. Tripling the arrival rate
-# fixes it for the right reason: across five seeds at this size the corrected
-# ratio lands between 0.96 and 1.19 of the reference months, four of them inside
-# 0.99 to 1.02. The correction works because the counts are large enough, not
-# because the seed was picked to flatter it.
+# The base rate is set for statistical power, not realism. The talk's
+# correction compares cohorts over an equal window from entry. The newest
+# complete cohort can only support a 30-day window, which catches about a third
+# of a cohort's eventual wins. At a few hundred leads per month that leaves
+# about sixteen wins per cohort, which swings by a quarter on chance alone. The
+# first tuning showed this: the newest cohort's corrected rate was still 40%
+# below its neighbours from sampling noise, so the correction visibly corrected
+# nothing. Tripling the arrival rate fixes it for the right reason. Across five
+# seeds at this size the corrected ratio lands between 0.96 and 1.19 of the
+# reference months, four of them inside 0.99 to 1.02. The counts are large
+# enough; the seed was not picked to flatter the result.
 gen_daily_base <- 42.3
 gen_annual_growth <- 1.6
-# The order is load-bearing, not decorative: these are looked up by position,
-# Sunday first, to match POSIXlt's day-of-week numbering.
+# Looked up by position, Sunday first, to match POSIXlt's day-of-week numbering.
 gen_weekday_factor <- c(
   Sunday = 0.30,
   Monday = 1.18,
@@ -56,9 +47,8 @@ gen_weekday_factor <- c(
 )
 
 # --- Dimensions -------------------------------------------------------------
-# All three are assigned at entry and are always populated, so they are safe to
-# group a full-funnel conversion denominator by. The late-arriving attributes,
-# which are not, come later in the build.
+# All three are assigned at entry and always populated, so they are safe to
+# group a full-funnel conversion denominator by.
 gen_channel_p <- c(
   `Organic Search` = 0.22,
   `Paid Search` = 0.18,
@@ -77,11 +67,10 @@ gen_region_p <- c(
 )
 
 # --- Late-populated attributes ----------------------------------------------
-# These are captured partway down the funnel, not at entry, so they are blank
-# for every lead that never got that far. That makes them unsafe to group a
-# full-funnel conversion denominator by -- the denominator silently becomes
-# "leads that qualified" -- and it means blank does not mean zero. Sales does
-# not record an industry for a lead nobody ever spoke to.
+# Captured partway down the funnel, so blank for every lead that never got
+# that far. Grouping a full-funnel denominator by them silently turns it into
+# "leads that qualified". Blank does not mean zero: sales does not record an
+# industry for a lead nobody spoke to.
 gen_industry_p <- c(
   Manufacturing = 0.24,
   Retail = 0.19,
@@ -92,9 +81,7 @@ gen_industry_p <- c(
   Education = 0.06
 )
 
-# Whoever the deal was competed against, recorded when it becomes an
-# opportunity. All invented; any resemblance to a real software company is
-# accidental.
+# Recorded when the lead becomes an opportunity. All names are invented.
 gen_competitor_p <- c(
   `Sagebrush Software` = 0.31,
   `Dustdevil Cloud` = 0.24,
@@ -114,11 +101,10 @@ gen_deal_value_size <- c(
 )
 
 # --- Campaigns --------------------------------------------------------------
-# One lead can be touched by several campaigns, and the source system records
-# them as a single comma-separated string. Splitting that column before grouping
-# gives one row per lead-campaign pair, so any count or conversion denominator
-# computed afterwards is inflated -- a lead touched by three campaigns is
-# counted three times. Populated at entry, so it is never blank.
+# A lead can be touched by several campaigns, stored as one comma-separated
+# string. Splitting it before grouping gives one row per lead-campaign pair, so
+# a lead touched by three campaigns is counted three times in any denominator.
+# Populated at entry, so never blank.
 gen_campaign_pool <- c(
   "Spring Workflow Webinar",
   "Approval Automation Guide",
@@ -132,9 +118,9 @@ gen_campaign_pool <- c(
 gen_campaign_count_p <- c(`1` = 0.35, `2` = 0.35, `3` = 0.22, `4` = 0.08)
 
 # --- Progression ------------------------------------------------------------
-# Three sequential gates, each a logistic function of channel, company size, and
-# a per-lead quality term shared across all three gates. Eventual entry-to-won
-# conversion is the product, tuned to roughly 11%.
+# Three sequential gates, each logistic in channel, company size, and a
+# per-lead quality term shared across gates. Eventual entry-to-won conversion
+# is the product, tuned to about 11%.
 gen_gate_intercept <- c(qualified = -0.43, opportunity = -0.51, won = -0.05)
 gen_channel_effect <- c(
   `Organic Search` = 0.06,
@@ -154,14 +140,14 @@ gen_company_size_effect <- c(
 gen_quality_sd <- 0.70
 
 # --- Delay ------------------------------------------------------------------
-# Lognormal per stage, so the entry-to-won total is right-skewed with a long
-# tail. Medians are in days.
+# Lognormal per stage, so the entry-to-won total is right-skewed. Medians are
+# in days.
 gen_stage_median <- c(qualified = 7, opportunity = 11.5, won = 13.5)
 gen_stage_sdlog <- c(qualified = 0.75, opportunity = 0.80, won = 0.85)
 
-# Enterprise deals move materially slower and referred and partner-sourced leads
-# move faster. This produces a second trap for free: at the as-of date Enterprise
-# looks worse than it is, purely from delay.
+# Enterprise deals move slower; referred and partner leads move faster. This
+# gives a second trap for free: at the as-of date Enterprise looks worse than
+# it is, purely from delay.
 gen_size_delay <- c(Small = 0.85, Medium = 1.00, Large = 1.25, Enterprise = 1.84)
 gen_channel_delay <- c(
   `Organic Search` = 1.00,
@@ -174,33 +160,26 @@ gen_channel_delay <- c(
 )
 
 # --- Skipped checkpoints ----------------------------------------------------
-# A small fraction of records show up at a late stage with no date on an earlier
-# one. Nothing sinister: somebody moved a deal forward in the CRM without filling
-# in the step it passed through. The lead did reach the stage, so the attribute
-# captured there is still recorded -- only the timestamp is missing.
-#
-# This is the subtlest trap of the four. A pipeline has to backfill the missing
-# date to keep the stage sequence usable, but a backfilled date is a guess, so
-# any time-in-stage metric computed from it is fiction. That is what makes the
-# use_for_time_* eligibility flags in the cohort table load-bearing rather than
-# decorative.
+# A few records reach a late stage with no date on an earlier one: someone
+# moved a deal forward in the CRM without filling in the step. The lead did
+# reach the stage, so the attribute captured there is still recorded. Only the
+# timestamp is missing. This is the subtlest trap of the four. A pipeline must
+# backfill the date to keep the sequence usable, but a backfilled date is a
+# guess, so any time-in-stage metric built on it is fiction. That is why the
+# use_for_time_* flags in the cohort table matter.
 gen_skip_qualified <- 0.030
 gen_skip_opportunity <- 0.015
 
-# Leads that fail a gate are marked lost some time after the last stage they did
-# reach.
+# Leads that fail a gate are marked lost some time after the last stage reached.
 gen_lost_median <- 21
 gen_lost_sdlog <- 0.90
 
 # --- Deliberate data-entry anomalies ----------------------------------------
-# Everything above this point is a plausible business process. These are not.
-# They are a handful of broken records injected on purpose so that
-# prep/validate_data.R has something real to fail on -- a validation script that
-# can only ever pass teaches nobody anything.
-#
-# The affected rows are picked by position within a filtered set rather than at
-# random, so they land on the same leads every run and the validator's output is
-# stable enough to quote.
+# Everything above is a plausible business process. These are broken records
+# injected on purpose so prep/validate_data.R has something real to fail on. A
+# validator that can only pass teaches nobody anything. Rows are picked by
+# position within a filtered set, not at random, so they land on the same leads
+# every run and the validator's output is stable enough to quote.
 gen_anomaly_negative_lag <- c(250L, 1900L)
 gen_anomaly_bad_ordering <- 600L
 gen_anomaly_duplicate_id <- c(from = 100L, to = 101L)
@@ -209,15 +188,13 @@ gen_anomaly_duplicate_id <- c(from = 100L, to = 101L)
 
 logistic <- function(x) 1 / (1 + exp(-x))
 
-# seq() over dates hands back an integer-backed Date, while as.Date() and readr
-# both produce double-backed ones. The two print identically and serialise
-# identically, so the difference only shows up when something compares the
-# in-memory table against the parsed CSV with identical(). Normalising at the
-# source is cheaper than remembering which of the two any given column is.
+# seq() over dates returns an integer-backed Date; as.Date() and readr return
+# double-backed ones. They print and serialise the same, so the difference only
+# shows when identical() compares the in-memory table with the parsed CSV.
+# Normalising here is cheaper than tracking which columns are which.
 as_double_date <- function(x) structure(as.numeric(x), class = "Date")
 
-# A lognormal parameterised by the median, which is what the tuning targets are
-# expressed in, rather than by meanlog.
+# Parameterised by the median because the tuning targets are medians.
 rlnorm_median <- function(n, median, sdlog) {
   stats::rlnorm(n, meanlog = log(median), sdlog = sdlog)
 }
@@ -226,11 +203,10 @@ rlnorm_median <- function(n, median, sdlog) {
 generate_arrivals <- function() {
   dates <- seq(gen_first_entry, gen_last_entry, by = "day")
   elapsed_years <- as.numeric(dates - gen_first_entry) / 365
-  # Indexed by position rather than by name. weekdays() is the obvious call and
-  # is a portability bug: it returns localised day names, so under a non-English
-  # LC_TIME every lookup misses, lambda becomes NA, and generation dies inside
-  # rpois() with a message about an invalid 'times' argument. POSIXlt numbers the
-  # days from 0 for Sunday, which is the order gen_weekday_factor is written in.
+  # Indexed by position, not name. weekdays() returns localised names, so under
+  # a non-English LC_TIME every lookup misses, lambda becomes NA, and rpois()
+  # dies with an invalid 'times' error. POSIXlt numbers days from 0 for Sunday,
+  # the order gen_weekday_factor is written in.
   weekday <- as.POSIXlt(dates)$wday + 1L
   lambda <- gen_daily_base *
     gen_annual_growth^elapsed_years *
@@ -254,9 +230,8 @@ generate_leads <- function() {
   region <- sample(names(gen_region_p), n, replace = TRUE, prob = gen_region_p)
 
   quality <- stats::rnorm(n, 0, gen_quality_sd)
-  # unname() throughout: looking a factor up by name returns a named vector, and
-  # those names ride along into every column derived from it. The CSV drops them
-  # so nothing downstream of the file ever noticed, but callers using the
+  # unname() throughout: a lookup by name returns a named vector, and the names
+  # ride into every derived column. The CSV drops them, but callers using the
   # in-memory table got date columns carrying 21,000 names apiece.
   offset <- unname(
     gen_channel_effect[channel] + gen_company_size_effect[company_size] + quality
@@ -270,9 +245,8 @@ generate_leads <- function() {
   passed_won <- passed_opportunity &
     stats::runif(n) < logistic(gen_gate_intercept[["won"]] + offset)
 
-  # Delays are drawn for every lead regardless of how far it got, so that the
-  # random stream does not depend on the gate outcomes. Unreached stages are
-  # blanked afterwards.
+  # Delays are drawn for every lead so the random stream does not depend on
+  # gate outcomes. Unreached stages are blanked afterwards.
   delay_scale <- unname(gen_size_delay[company_size] * gen_channel_delay[channel])
   lag_qualified <- rlnorm_median(
     n,
@@ -291,8 +265,7 @@ generate_leads <- function() {
   ) * delay_scale
   lag_lost <- rlnorm_median(n, gen_lost_median, gen_lost_sdlog)
 
-  # Rounding up guarantees each stage date is strictly later than the previous
-  # one, so the table is monotonic by construction.
+  # Rounding up keeps each stage date strictly later than the previous one.
   qualified_date <- entered_date + ceiling(lag_qualified)
   opportunity_date <- qualified_date + ceiling(lag_opportunity)
   won_date <- opportunity_date + ceiling(lag_won)
@@ -301,7 +274,6 @@ generate_leads <- function() {
   opportunity_date[!passed_opportunity] <- NA
   won_date[!passed_won] <- NA
 
-  # A lost lead is marked lost some time after the furthest stage it reached.
   last_reached <- pmax(
     entered_date,
     dplyr::coalesce(qualified_date, entered_date),
@@ -324,10 +296,9 @@ generate_leads <- function() {
   )
 }
 
-# Attributes captured partway down the funnel. Values are drawn for every lead
-# and then blanked for the leads that never reached the capturing stage, so the
-# missingness is a consequence of where each lead stopped rather than an
-# independent coin flip.
+# Values are drawn for every lead, then blanked where the lead never reached
+# the capturing stage. Missingness follows where each lead stopped rather than
+# an independent coin flip.
 add_late_attributes <- function(leads) {
   n <- nrow(leads)
 
@@ -362,9 +333,8 @@ add_late_attributes <- function(leads) {
     )
 }
 
-# The multi-value column: a comma-separated list of the campaigns that touched
-# each lead. Names are sorted so the string is canonical rather than carrying the
-# draw order, which makes the column diffable and the regeneration test honest.
+# Names are sorted so the string is canonical rather than carrying draw order.
+# That keeps the column diffable and the regeneration test honest.
 add_campaigns <- function(leads) {
   n <- nrow(leads)
   counts <- as.integer(sample(
@@ -381,10 +351,8 @@ add_campaigns <- function(leads) {
   mutate(leads, campaigns = .env$campaigns)
 }
 
-# Blank an intermediate stage date on a small fraction of records that reached a
-# later stage. Only records with the later date are eligible, so this drops a
-# timestamp without ever changing how far a lead actually got -- conversion
-# counts are untouched.
+# Only records with the later date are eligible, so this drops a timestamp
+# without changing how far a lead got. Conversion counts are untouched.
 add_skipped_checkpoints <- function(leads) {
   n <- nrow(leads)
   skip_qualified <- stats::runif(n) < gen_skip_qualified
@@ -405,18 +373,11 @@ add_skipped_checkpoints <- function(leads) {
     )
 }
 
-# Break a few records on purpose. Called last, so nothing downstream in the
-# generator can quietly repair the damage.
-# Which rows the anomalies land on.
-#
 # Exported rather than kept inside the injector so the validator can check
-# identity instead of counting. Counting alone is fooled by substitution: repair
-# one configured anomaly, accidentally break a different row the same way, and
-# the totals are unchanged.
-#
-# The selection is stable before and after injection -- nothing here changes
-# which dates are missing, only what they contain -- so calling it on the
-# finished table returns the same rows it was applied to.
+# identity instead of counting. Counting is fooled by substitution: repair one
+# configured anomaly, break a different row the same way, and totals are
+# unchanged. The selection is stable before and after injection, because
+# injection changes date values but not which dates are missing.
 anomaly_rows <- function(leads) {
   qualified_rows <- which(!is.na(leads$qualified_date))
   full_path_rows <- which(!is.na(leads$opportunity_date) & !is.na(leads$won_date))
@@ -429,20 +390,22 @@ anomaly_rows <- function(leads) {
   )
 }
 
+# Called last so nothing downstream in the generator can quietly repair the
+# damage.
 add_data_entry_anomalies <- function(leads) {
   rows <- anomaly_rows(leads)
 
-  # A qualification date before the lead ever arrived, which yields a negative
-  # time in stage. Real CRMs produce these through manual backdating.
+  # Qualified before arrival: a negative time in stage. Real CRMs produce these
+  # through manual backdating.
   leads$qualified_date[rows$negative_lag] <-
     leads$entered_date[rows$negative_lag] - c(3, 11)
 
-  # A deal recorded as won before it became an opportunity.
+  # Won before it became an opportunity.
   leads$won_date[rows$bad_ordering] <-
     leads$opportunity_date[rows$bad_ordering] - 2
 
-  # The same lead id on two different rows, so anything that assumes lead_id is
-  # a key will silently double-count or silently drop one of them.
+  # Duplicate lead id, so anything treating lead_id as a key double-counts or
+  # drops one row.
   leads$lead_id[rows$duplicate_to] <- leads$lead_id[rows$duplicate_from]
 
   leads
@@ -455,10 +418,10 @@ generate_funnel_raw <- function(seed = INBOX_SEED) {
     normal.kind = "Inversion",
     sample.kind = "Rejection"
   )
-  # Order matters: the skipped checkpoints are applied last, after the late
-  # attributes have been assigned from the intact stage dates. A lead whose
-  # qualification date went missing still qualified, so it still has an
-  # industry -- which is exactly the inconsistency the pipeline has to notice.
+  # Order matters: skipped checkpoints come after late attributes are assigned
+  # from intact stage dates. A lead with a missing qualification date still
+  # qualified, so it still has an industry. That inconsistency is the one the
+  # pipeline has to notice.
   generate_leads() |>
     add_late_attributes() |>
     add_campaigns() |>
@@ -467,9 +430,9 @@ generate_funnel_raw <- function(seed = INBOX_SEED) {
 }
 
 # --- Serialisation ----------------------------------------------------------
-# The CSV is gitignored: it is rebuilt from the seed rather than tracked. These
-# helpers exist so that every reader agrees on the column types, because guessed
-# types are a slow way to introduce a difference between two runs.
+# The CSV is gitignored and rebuilt from the seed. Explicit column types keep
+# every reader in agreement; guessed types are a slow way to make two runs
+# differ.
 
 inbox_funnel_raw_path <- function() inbox_data_path("funnel_raw.csv")
 

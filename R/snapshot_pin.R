@@ -1,11 +1,9 @@
 source(here::here("prep", "build_cohort.R"))
 
-# One snapshot on the board rather than a copy in every bundle.
-#
-# The report pins the snapshot it worked from; the apps read that pin, and so
-# can a reader following the email's code. pins skips the write when the data
-# has not changed, so a weekly run against the same frozen data adds no
-# versions.
+# One snapshot on the board rather than a copy in every bundle. The report pins
+# the snapshot it worked from; the apps and a reader following the email's code
+# read that pin. pins skips the write when the data has not changed, so a
+# weekly run against the same frozen data adds no versions.
 
 SNAPSHOT_PIN <- "funnel-snapshot"
 

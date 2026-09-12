@@ -2,32 +2,27 @@ source(here::here("R", "report_contract.R"))
 
 # The live branch: reports written by a model rather than authored.
 #
-# The authored path in report_contract.R validates an insight by recomputing its
-# evidence with a reproducer this repository already owns. That is what makes
-# the fixtures trustworthy, and it is exactly what a live agent cannot satisfy:
-# a genuinely new finding has no pre-registered reproducer.
-#
-# So the live branch strikes the same bargain as the reference implementation.
-# The agent computes its evidence in the sandboxed REPL and saves it there as a
-# data frame; the runner reads that file back, checks its shape, and takes the
-# code the agent reports as its account of how the table was produced. Nothing
-# is re-executed. The checks here are the cheap, token-free kind -- a well-formed
-# table, a schema, code that at least parses -- and the report says plainly that
-# a model wrote it and nobody has reviewed it yet. Whether the question was worth
-# asking, and whether the code really produces the table, is what the reviewer
-# is for.
+# The authored path in report_contract.R validates an insight by recomputing
+# its evidence with a reproducer this repository owns. A live agent cannot
+# satisfy that: a new finding has no pre-registered reproducer. So the agent
+# computes its evidence in the sandboxed REPL and saves it as a data frame.
+# The runner reads that file back, checks its shape, and takes the reported
+# code as the agent's account of how the table was produced. Nothing is
+# re-executed. The checks are cheap and token-free: a well-formed table, a
+# schema, code that parses. The report says plainly that a model wrote it and
+# nobody has reviewed it. Whether the question was worth asking, and whether
+# the code really produces the table, is for the reviewer.
 
 LIVE_REPORT_PURPOSE <- "weekly_email_live"
 
 # An email table has to be readable. Past this the agent should aggregate.
 LIVE_EVIDENCE_MAX_ROWS <- 40L
 
-# Value columns beside the labels. Four columns fit the email's width; a fifth
-# runs out of the sheet on the right.
+# Value columns beside the labels. With the label column, four fit the email's
+# width; a fifth runs off the right edge.
 LIVE_EVIDENCE_MAX_COLUMNS <- 3L
 
-# How a model's numbers read in the email and the apps. The model names its
-# columns, and the name and the values decide the format: money in dollars,
+# The column name and its values decide the format: money in dollars,
 # percentages and shares to two decimals, whole numbers whole, anything else to
 # two decimals. Applied per column, so a column is formatted one way throughout.
 format_evidence_values <- function(column, values) {
@@ -46,7 +41,6 @@ format_evidence_values <- function(column, values) {
   format(round(values, 2), nsmall = 2, big.mark = ",", scientific = FALSE, trim = TRUE)
 }
 
-# The evidence, column by column, as strings ready to show.
 format_evidence_table <- function(evidence) {
   columns <- unlist(evidence$value_columns)
   lapply(seq_along(columns), function(j) {
@@ -54,9 +48,9 @@ format_evidence_table <- function(evidence) {
   })
 }
 
-# Evidence is a small labelled table: one label column and any number of numeric
-# columns. General enough for a finding nobody anticipated, typed enough to
-# render without guessing at formatting.
+# Evidence is one label column plus numeric columns. General enough for a
+# finding nobody anticipated, typed enough to render without guessing at
+# formatting.
 live_insight_schema <- function() {
   text <- list(type = "string", minLength = 1L)
   report_object(list(
@@ -82,8 +76,8 @@ live_insight_schema <- function() {
 
 # --- Evidence the agent saved from the REPL ----------------------------------
 
-# The agent hands in a file name, never a path. Anything with a directory in it
-# could point the runner at a file the sandbox was never allowed to write.
+# The agent hands in a file name, never a path. A directory component could
+# point the runner at a file the sandbox was never allowed to write.
 live_evidence_path <- function(scratch, file) {
   if (!is.character(file) || length(file) != 1L || is.na(file) || !nzchar(file) ||
       !identical(basename(file), file) || file %in% c(".", "..")) {
@@ -170,8 +164,8 @@ read_live_evidence <- function(scratch, file) {
 validate_live_insight <- function(insight) {
   validate_report_value(insight, live_insight_schema())
 
-  # The row cap is checked here as well as when the RDS is read, so an insight
-  # that arrives already serialised is held to the same size.
+  # The row cap is checked here as well as on RDS read, so an insight that
+  # arrives already serialised is held to the same size.
   if (length(insight$evidence$rows) > LIVE_EVIDENCE_MAX_ROWS) {
     stop(
       "Evidence has ", length(insight$evidence$rows), " rows; the limit is ",
@@ -198,9 +192,8 @@ validate_live_insight <- function(insight) {
     }
   }
 
-  # Parsing is not running. It catches code R would refuse outright, so the
-  # email never shows a snippet that cannot be what produced the table, and it
-  # establishes nothing beyond that.
+  # Parsing is not running. It only rules out code R would refuse outright, so
+  # the email never shows a snippet that could not have produced the table.
   parsed <- tryCatch(
     parse(text = insight$reproducible_code, keep.source = FALSE),
     error = function(e) {
@@ -230,9 +223,8 @@ validate_live_report <- function(report, snapshot) {
     type = "string", enum = LIVE_REPORT_PURPOSE
   ), "purpose")
 
-  # Provenance says plainly that a model wrote this. An authored fixture and a
-  # captured model run must never be mistaken for one another, in either
-  # direction.
+  # Provenance says a model wrote this. An authored fixture and a captured
+  # model run must never be mistaken for one another.
   validate_report_value(report$provenance, report_object(list(
     kind = list(type = "string", enum = "live_model_run"),
     provider = list(type = "string", minLength = 1L),
@@ -253,7 +245,7 @@ validate_live_report <- function(report, snapshot) {
   }
 
   # The headline strip is arithmetic, so it is held to the authored standard:
-  # it must reproduce from the snapshot exactly, model or no model.
+  # it must reproduce exactly from the snapshot, model or no model.
   validate_report_value(
     report$headline_metrics, headline_metrics_schema(), "headline_metrics"
   )
@@ -271,8 +263,8 @@ validate_live_report <- function(report, snapshot) {
 }
 
 # `usage` is chat$get_tokens(): one row per assistant turn with input, output
-# and, for providers that report it, cached_input columns. Summed into the two
-# numbers the footer shows.
+# and, where the provider reports it, cached_input. Summed into the two numbers
+# the footer shows.
 live_token_usage <- function(usage) {
   if (is.null(usage) || !nrow(usage)) return(list(input = 0, output = 0))
   cached <- if ("cached_input" %in% names(usage)) usage$cached_input else 0

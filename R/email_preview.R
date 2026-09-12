@@ -3,11 +3,9 @@ source(here::here("R", "theme.R"))
 source(here::here("R", "charts.R"))
 
 # Render the report's evidence chart and embed it, so the preview is one
-# self-contained file with nothing to hotlink.
-#
-# Note this makes the HTML bytes machine-dependent, the same way the stills are:
-# the embedded PNG depends on the local font rendering. Nothing asserts the
-# bytes of either.
+# self-contained file with nothing to hotlink. This makes the HTML bytes
+# machine-dependent, like the stills: the PNG depends on local font rendering.
+# Nothing asserts the bytes of either.
 insight_chart_uri <- function(insight) {
   path <- tempfile(fileext = ".png")
   on.exit(unlink(path), add = TRUE)
@@ -30,8 +28,8 @@ email_version_label <- function(purpose) {
 
 email_period <- function(value) paste(value$start, "through", value$end)
 
-# The masthead and the lines under it. The lead insight supplies the dates,
-# because every insight in one email shares a cutoff and a reporting period.
+# The masthead and the lines under it. The lead insight supplies the dates
+# because every insight in one email shares a cutoff and reporting period.
 email_header <- function(report, lead_insight) {
   tags <- htmltools::tags
   st <- inbox_email_styles()
@@ -157,8 +155,8 @@ email_insight_section <- function(insight) {
     )),
     tags$p(style = st$p, insight$metric_definition),
     # Drawn from insight$evidence, which validate_insight() has already checked
-    # reproduces from the snapshot. The chart and the table below it are
-    # therefore the same numbers by construction rather than by agreement.
+    # against the snapshot, so the chart and the table below it show the same
+    # numbers by construction.
     tags$img(
       class = "chart",
       style = st$chart,
@@ -175,8 +173,8 @@ email_insight_section <- function(insight) {
     tags$p(class = "muted small", style = st$muted_small,
       "Against the same frozen snapshot, using only dplyr and pins:"
     ),
-    # .noWS is load-bearing here. htmltools indents child tags, and inside a
-    # <pre> that indentation is content.
+    # .noWS is required: htmltools indents child tags, and inside a <pre> that
+    # indentation is content.
     tags$pre(.noWS = "inside", style = st$pre,
       tags$code(.noWS = "inside", style = st$code, insight$reproducible_code)
     )
@@ -184,12 +182,10 @@ email_insight_section <- function(insight) {
 }
 
 # A live insight's evidence has whatever shape the model chose, so it gets a
-# generic table and no chart. Charting an arbitrary table without knowing what
-# the columns mean would be decoration standing in for understanding.
-#
-# The caption and the code heading are worded for what actually happened: the
+# generic table and no chart: charting columns of unknown meaning would be
+# decoration. The caption and code heading describe what actually happened: the
 # table is the one the model saved from its session, and the code is what it
-# said produced it. Neither was re-run by the runner.
+# said produced it. The runner re-ran neither.
 live_insight_section <- function(insight) {
   tags <- htmltools::tags
   st <- inbox_email_styles()
@@ -232,8 +228,7 @@ live_insight_section <- function(insight) {
       "produced from it, as submitted and not re-run:"
     )),
     # The preamble is the runner's; only the code after the comment is the
-    # model's. The comment marks the seam so nothing is attributed to the wrong
-    # author.
+    # model's. The comment marks the seam so neither is misattributed.
     tags$pre(.noWS = "inside", style = st$pre,
       tags$code(.noWS = "inside", style = st$code, paste(
         "library(dplyr)",
@@ -249,8 +244,8 @@ live_insight_section <- function(insight) {
 }
 
 live_email_html <- function(report, snapshot) {
-  # Same gate as the authored renderers: a report from another snapshot, or
-  # one whose strip no longer reproduces, is not rendered against this one.
+  # Same gate as the authored renderers: a report from another snapshot, or one
+  # whose strip no longer reproduces, is not rendered against this one.
   validate_live_report(report, snapshot)
   lead <- list(
     data_as_of = as.character(require_snapshot(snapshot)),
@@ -268,7 +263,7 @@ write_live_email_preview <- function(report, snapshot, path) {
 }
 
 # Two ways back into the loop, placed under the numbers and above the
-# headlines. Only when the apps have an address: see inbox_app_url().
+# headlines. Rendered only when the apps have an address; see inbox_app_url().
 email_banners <- function() {
   chat <- inbox_app_url("chat")
   feedback <- inbox_app_url("feedback")
@@ -318,9 +313,8 @@ email_footer <- function(report) {
   )
 }
 
-# The deterministic strip: what happened in the reporting period, counted.
-#
-# No interpretation, no rate, no colour. Everything above the insights is
+# The deterministic strip: what happened in the reporting period, counted. No
+# interpretation, no rate, no colour. Everything above the insights is
 # arithmetic the reader can redo; everything below is a claim about it.
 email_stat_strip <- function(metrics, windows) {
   tags <- htmltools::tags
@@ -393,13 +387,11 @@ email_sections <- function(sections) {
   })
 }
 
-# What Connect sends, as opposed to what the browser shows.
-#
-# Mail clients drop `data:` images (Gmail strips them as an anti-abuse
-# measure), so every embedded PNG becomes a CID attachment: the <img> points at
-# `cid:image-N.png` and the image travels in rsc_email_images, which is how
-# blastula delivers images on Connect. The styles are already inline, so the
-# rest of the HTML goes as it is.
+# What Connect sends, as opposed to what the browser shows. Mail clients drop
+# `data:` images (Gmail strips them as anti-abuse), so every embedded PNG
+# becomes a CID attachment: the <img> points at `cid:image-N.png` and the image
+# travels in rsc_email_images, which is how blastula delivers images on
+# Connect. The styles are already inline, so the rest of the HTML goes as is.
 email_deliverable <- function(html) {
   text <- htmltools::doRenderTags(html)
   pattern <- 'src="data:image/png;base64,([^"]*)"'

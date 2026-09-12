@@ -34,7 +34,7 @@ runner, is the check on whether a finding holds up.
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
-# A Connect bundle has no .git or .Rproj for here() to find; anchor on this file.
+# A Connect bundle has no .git or .Rproj for here() to find; anchor on the Rmd.
 here::i_am("weekly-report.Rmd")
 
 library(dplyr)
@@ -49,57 +49,56 @@ source(here::here("R", "email_preview.R"))
 ```
 
 ```{r check-repl}
-# Resolved first, before any data is staged, so a missing REPL fails the run at
-# the first chunk. R/live_session.R knows where deploy.R puts the Linux build.
+# Resolved before any data is staged, so a missing REPL fails at the first
+# chunk. R/live_session.R knows where deploy.R puts the Linux build.
 repl_binary <- live_repl_binary()
 ```
 
 ```{r config}
-# Provider and model come from INBOX_CHAT_PROVIDER and INBOX_CHAT_MODEL (see
-# config.example.R). Any provider ellmer knows will do; the API key belongs in
-# ~/.Renviron.
+# From INBOX_CHAT_PROVIDER and INBOX_CHAT_MODEL (see config.example.R). Any
+# provider ellmer knows works; the API key belongs in ~/.Renviron.
 PROVIDER <- inbox_provider()$provider
 MODEL <- inbox_provider()$model
 
 N_CANDIDATES <- 8L   # brainstormed before choosing
 N_HEADLINES <- 3L    # carried into the email
 
-# A REPL on a schedule is an open-ended loop with a bill attached. The notice
-# gives the model a chance to finish cleanly; the caps stop it regardless.
-# R/token_budget.R is where both are enforced.
+# A scheduled REPL is an open-ended loop with a bill attached. The notice lets
+# the model finish cleanly; the caps stop it regardless. Both are enforced in
+# R/token_budget.R.
 budget <- token_budget(input_cap = 2e6, output_cap = 1e5, warn_at = 0.8, call_cap = 150)
 
 OUTPUT_DIR <- inbox_artifact_path("live")
 dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
-# The shared state: approved rules and the headlines of earlier runs. The
-# folder board locally, the Connect board when this runs there; R/config.R
-# decides, and the apps read the same one.
+# Shared state: approved rules and earlier runs' headlines. R/config.R picks
+# the folder board locally or the Connect board there; the apps read the same
+# one.
 board <- inbox_board()
 ```
 
 ```{r load-data}
 # The model sees funnel_snapshot() and nothing else. funnel_cohort carries
-# won_eventually, and a report built on hindsight would be worthless as a
-# demonstration even when the arithmetic checked out.
+# won_eventually, and a report built on hindsight proves nothing even when the
+# arithmetic checks out.
 snapshot <- funnel_snapshot(read_funnel_cohort())
 
-# Pinned before the run rather than after, so the apps and the email's
-# pin_read() line have the data even on a week the model fails to report.
+# Pinned before the run, so the apps and the email's pin_read() line have data
+# even on a week the model fails to report.
 write_snapshot_pin(board, snapshot)
 
-# One directory holding the snapshot, which the REPL is spawned in so that its
-# writable workspace is that directory and not the repository. The tables the
-# model saves land there, where the tools below read them back.
+# The REPL is spawned in a directory holding the snapshot, so its writable
+# workspace is that directory and not the repository. Saved tables land there
+# and the tools below read them back.
 scratch <- live_repl_scratch(snapshot, repl_binary)
 
-# What earlier runs said, so this one does not say it again.
+# What earlier runs said, so this one does not repeat it.
 history <- read_headline_history(board)
 ```
 
 ```{r tools}
-# Two classes of capability, as the talk describes them: a REPL to look around,
-# and a form to hand in the answer. Everything else the model gets is context.
+# Two capabilities, as the talk describes them: a REPL to look around and a
+# form to hand in the answer. Everything else the model gets is context.
 staging <- new.env(parent = emptyenv())
 staging$candidates <- NULL
 staging$headlines <- vector("list", N_HEADLINES)
@@ -137,14 +136,13 @@ submit_headline <- ellmer::tool(
     insight <- list(
       title = title, finding = finding, suggested_action = suggested_action,
       metric_definition = metric_definition, caveat = caveat,
-      # The table the model saved from the REPL, read back from the directory
-      # the REPL was spawned in. The model never retypes its numbers.
+      # Read back from the REPL's directory. The model never retypes numbers.
       evidence = read_live_evidence(scratch$dir, evidence_file),
       reproducible_code = reproducible_code
     )
 
-    # Checked here rather than at the end, so the model is told immediately
-    # and can fix one headline instead of losing the whole run.
+    # Checked here, not at the end, so the model can fix one headline instead
+    # of losing the whole run.
     validate_live_insight(insight)
     staging$headlines[[slot]] <- insight
     paste0("Headline ", slot, " accepted with ",
@@ -189,9 +187,9 @@ submit_report <- ellmer::tool(
 ```
 
 ```{r system-prompt}
-# The data warnings and the approved context come from R/live_session.R, which
-# the chat app also uses, so the two agents are told the same things. The
-# previous headlines come from the board, so this run does not repeat them.
+# Data warnings and approved context come from R/live_session.R, shared with
+# the chat app, so both agents are told the same things. Previous headlines
+# come from the board, so this run does not repeat them.
 system_prompt <- paste(
   "You write a weekly funnel report for ChickenCloud, a B2B SaaS company.",
   "",
@@ -236,7 +234,7 @@ report <- NULL
 failure <- NULL
 
 # The calling handler runs before the stack unwinds, so the log gets the
-# innermost calls of whatever failed; try() alone would keep only the message.
+# innermost calls of whatever failed. try() alone keeps only the message.
 result <- try(withCallingHandlers({
   repl_tools <- live_repl_tools(scratch)
 
@@ -244,19 +242,18 @@ result <- try(withCallingHandlers({
     paste0(PROVIDER, "/", MODEL), system_prompt = system_prompt, echo = "none"
   )
 
-  # Every tool, the REPL's included, is wrapped so the budget notice can reach
-  # the model. A tool result is the only channel back to it mid-run; the
-  # callback below can watch the meter but cannot change what the model sees.
+  # Every tool is wrapped so the budget notice can reach the model. A tool
+  # result is the only channel back to it mid-run; the callback below can
+  # watch the meter but cannot change what the model sees.
   chat$set_tools(lapply(
     c(repl_tools, list(submit_candidates, submit_headline, submit_report)),
     deliver_budget_notice, budget = budget
   ))
   chat$on_tool_request(function(request) count_tool_call(budget))
   chat$on_tool_result(function(result) {
-    # One line per tool call in the process log, so a run on Connect can be
-    # followed while it happens and read back when it does not finish.
-    # The REPL reports its own failures as text, not as tool errors, so the
-    # start of every result is logged too.
+    # One log line per tool call, so a Connect run can be followed live and
+    # read back when it does not finish. The REPL reports its own failures as
+    # text, not tool errors, so the start of every result is logged too.
     one_line <- function(x) substr(gsub("\\s+", " ", paste(format(x), collapse = " ")), 1, 160)
     live_log("tool ", result@request@name, if (!is.null(result@error)) {
       paste0(" ERROR: ", one_line(result@error))
@@ -272,8 +269,8 @@ result <- try(withCallingHandlers({
     N_CANDIDATES, " questions, then develop the ", N_HEADLINES, " best."
   ))
 
-  # A model that has its headlines accepted and then summarises instead of
-  # calling the last tool is common enough to deserve one reminder, and no more.
+  # Models often summarise instead of calling the last tool. One reminder, no
+  # more.
   if (!staging$submitted) {
     live_log("model ended its turn without submit_report; one reminder")
     chat$chat(paste(
@@ -283,8 +280,8 @@ result <- try(withCallingHandlers({
     ))
   }
 
-  # The callback runs after tool results, and the model's closing turn has
-  # none, so the final tally is checked here before anything is written.
+  # The closing turn has no tool result to trigger the callback, so the final
+  # tally is checked here before anything is written.
   check_token_budget(budget, chat$get_tokens())
 
   if (!staging$submitted) {
@@ -303,8 +300,8 @@ result <- try(withCallingHandlers({
 
 if (inherits(result, "try-error")) {
   failure <- conditionMessage(attr(result, "condition"))
-  # The whole conversation, clipped, into the log and onto the page: the one
-  # thing a failed unattended run owes whoever has to work out why.
+  # The clipped conversation goes to the log and the page: the one thing a
+  # failed unattended run owes whoever has to work out why.
   transcript <- if (exists("chat", inherits = FALSE)) live_transcript(chat$get_turns()) else character()
   live_log("FAILED: ", failure)
   for (line in transcript) live_log(line)
@@ -330,12 +327,11 @@ failure_page <- function(message) {
 }
 
 # doRenderTags, not as.character: the latter hoists <head> out of the document
-# the way Shiny wants, which would leave the email and the page without CSS.
+# the way Shiny wants, leaving the email and the page without CSS.
 if (is.null(failure)) {
   email <- live_email_html(report, snapshot)
   page <- htmltools::doRenderTags(email)
-  # The same HTML with the logo as a CID attachment instead of a data: URI,
-  # which mail clients would strip.
+  # Same HTML with the logo as a CID attachment; mail clients strip data: URIs.
   deliverable <- email_deliverable(email)
   write_live_report(report, file.path(OUTPUT_DIR, "weekly_report_live.json"))
   write_live_email_preview(report, snapshot, file.path(OUTPUT_DIR, "weekly-email-live.html"))
@@ -344,7 +340,7 @@ if (is.null(failure)) {
   live_log("wrote ", length(report$insights), " headlines to ", OUTPUT_DIR,
     " and to the ", HEADLINE_HISTORY_PIN, " pin")
 
-  # On Connect this is the email that goes out; anywhere else the metadata is
+  # On Connect this is the email that goes out. Elsewhere the metadata is
   # inert and the preview file is the deliverable.
   rmarkdown::output_metadata$set(
     rsc_email_subject = paste0(
@@ -355,8 +351,8 @@ if (is.null(failure)) {
     rsc_email_suppress_report_attachment = TRUE
   )
 } else {
-  # No partial email, and on Connect no email at all. A run that did not finish
-  # has nothing that should reach an inbox.
+  # No partial email. A run that did not finish has nothing that should reach
+  # an inbox.
   rmarkdown::output_metadata$set(rsc_email_suppress_scheduled = TRUE)
   page <- htmltools::doRenderTags(failure_page(failure))
 }

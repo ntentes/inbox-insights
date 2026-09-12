@@ -1,10 +1,8 @@
 # A thin interface over what the report already accumulated, not a second AI
-# system started from a blank prompt.
-#
-# The chat gets the same data warnings and the same approved context as the
+# system. The chat gets the same data warnings and approved context as the
 # report runner (R/live_session.R), a sandboxed R session over the same frozen
-# snapshot, and the latest report's headlines from the shared board, so it opens
-# already knowing what the reader is looking at.
+# snapshot, and the latest headlines from the shared board. It opens already
+# knowing what the reader is looking at.
 #
 # Locally this file is apps/chat/app.R; deploy.R stages it at the root of the
 # Connect bundle next to the R/ and prep/ files it sources.
@@ -23,15 +21,15 @@ board <- inbox_board()
 snapshot <- current_snapshot(board)
 latest <- latest_headlines(read_headline_history(board))
 
-# Without the REPL the chat can still discuss the report; it just cannot compute.
+# Without the REPL the chat can still discuss the report; it cannot compute.
 repl_binary <- tryCatch(live_repl_binary(), error = function(e) {
   message(conditionMessage(e))
   NULL
 })
 
-# Each session's scratch directory is served over HTTP under its own prefix, so
-# a PNG the model saves there can be shown in the chat as a markdown image. The
-# prompt has to know the prefix, so it is built per session.
+# Each session's scratch directory is served over HTTP under its own prefix,
+# so a PNG the model saves there can appear in the chat as a markdown image.
+# The prompt must know the prefix, so it is built per session.
 plot_prompt <- function(files_prefix) {
   if (is.null(files_prefix)) return("")
   paste(
@@ -143,9 +141,8 @@ ui <- page_sidebar(
 server <- function(input, output, session) {
   provider <- inbox_provider()
 
-  # One REPL per session, spawned in its own scratch directory holding the
-  # snapshot, served over HTTP for the plots it saves, and removed when the
-  # session ends.
+  # One REPL per session, in its own scratch directory holding the snapshot.
+  # The directory is served over HTTP for plots and removed at session end.
   scratch <- NULL
   files_prefix <- NULL
   repl_tools <- list()

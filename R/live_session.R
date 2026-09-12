@@ -4,12 +4,12 @@ source(here::here("R", "context_archive.R"))
 # What the report runner and the chat app share: where the sandboxed REPL is,
 # how a snapshot is handed to it, and what the model is told about the data and
 # the approved context. Two agents warned differently about the same traps
-# would be two AI systems; the point of the chat is that there is one.
+# would be two AI systems; the point is that there is one.
 
-# deploy.R bundles a Linux build at bin/mcp-repl for Connect; locally that file
-# is the wrong architecture, so it is used only if it actually runs. The
-# installer puts a local copy in ~/.local/bin, which a render or a Shiny process
-# often does not inherit on PATH.
+# deploy.R bundles a Linux build at bin/mcp-repl for Connect. Locally that file
+# is the wrong architecture, so it is used only if it runs. The installer puts
+# a copy in ~/.local/bin, which a render or Shiny process often does not have
+# on PATH.
 live_repl_binary <- function() {
   bundled <- here::here("bin", "mcp-repl")
   if (file.exists(bundled)) {
@@ -30,10 +30,9 @@ live_repl_binary <- function() {
 
 # The house recipes as one file the sandbox can source on its own. recipes.R
 # pulls in snapshot.R through here::here(), which has no project to find inside
-# the sandbox, so the two are concatenated and the one config constant the
-# recipes default to is set from the snapshot itself. The recipes are copied,
-# not rewritten: the model computes with exactly the functions the business
-# uses, which is the point of giving them to it.
+# the sandbox, so the two are concatenated and INBOX_AS_OF is set from the
+# snapshot itself. The recipes are copied, not rewritten: the model computes
+# with exactly the functions the business uses.
 live_recipes_source <- function(snapshot) {
   recipes <- readLines(here::here("R", "recipes.R"))
   recipes <- recipes[!grepl("source(here::here(", recipes, fixed = TRUE)]
@@ -49,17 +48,17 @@ live_recipes_source <- function(snapshot) {
 }
 
 # mcp-repl's sandbox mode. workspace-write confines the worker to the directory
-# it is spawned in, which is the scratch directory below. INBOX_REPL_SANDBOX
-# overrides it, for experiments; the values are mcp-repl's own.
+# it is spawned in, the scratch directory below. INBOX_REPL_SANDBOX overrides
+# it for experiments; the values are mcp-repl's own.
 live_repl_sandbox <- function() {
   Sys.getenv("INBOX_REPL_SANDBOX", "workspace-write")
 }
 
-# One directory, two files: the snapshot and the recipes. The REPL is spawned
-# with this as its working directory, so the workspace it may write to is this
-# and not the repository, and the tables it saves land where the caller can
-# read them back. The arguments are the ones the marketing generator deploys
-# with; the release deploy.R pins is the one it runs on Connect.
+# The REPL is spawned with this directory as its working directory, so the
+# workspace it may write to is this and not the repository, and saved tables
+# land where the caller can read them back. The arguments are the ones the
+# marketing generator deploys with; the release deploy.R pins is the one that
+# runs on Connect.
 live_repl_scratch <- function(snapshot, binary = live_repl_binary(),
                               sandbox = live_repl_sandbox()) {
   dir <- tempfile("inbox-repl-")
@@ -74,8 +73,8 @@ live_repl_scratch <- function(snapshot, binary = live_repl_binary(),
   list(dir = dir, config = config)
 }
 
-# Spawned from the scratch directory so that its writable workspace is that
-# directory rather than wherever the caller happens to be running.
+# Spawned from the scratch directory so its writable workspace is that
+# directory, not wherever the caller is running.
 live_repl_tools <- function(scratch) {
   # mcp-repl starts R by name. On Connect R lives under /opt/R and is not on
   # PATH, so the REPL would start and then fail on its first call.
@@ -89,14 +88,14 @@ live_repl_tools <- function(scratch) {
 }
 
 # Progress lines for the process log. knitr's message = FALSE swallows
-# message(); stderr does not pass through knitr, so on Connect this is what
-# the job log shows while a run is in progress.
+# message(). stderr bypasses knitr, so on Connect this is what the job log
+# shows while a run is in progress.
 live_log <- function(...) {
   cat(format(Sys.time(), "%H:%M:%S"), paste0(..., collapse = ""), "\n", file = stderr())
 }
 
-# The conversation as text: what the model said, what it called, what came
-# back, each clipped. A run that ends without a report is read back from this.
+# The conversation as clipped text. A run that ends without a report is read
+# back from this.
 live_transcript <- function(turns, width = 300L) {
   clip <- function(x) {
     x <- gsub("\\s+", " ", paste(format(x), collapse = " "))
@@ -179,8 +178,8 @@ live_data_prompt <- function() {
 }
 
 # The approved context, phrased for a prompt. context_archive() is the one
-# place that decides what the model may know, so pending feedback never
-# appears here, and a board with no guidance yet simply contributes nothing.
+# place that decides what the model may know, so pending feedback never appears
+# here. A board with no guidance yet contributes nothing.
 live_context_prompt <- function(board, snapshot) {
   if (!pins::pin_exists(board, GUIDANCE_PIN)) {
     return("APPROVED DIRECTIVES\nNone yet.")
