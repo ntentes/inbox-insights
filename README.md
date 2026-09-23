@@ -5,11 +5,9 @@ The proof of concept behind the [posit::conf(2026)](https://conf.posit.co/) talk
 **When this fits:** There are many ways to give an agent context, and many
 tools now ship with formal context management built in. This project is not
 that. It shows one informal way to crowdsource a context archive for a trusted
-data view: house recipes, approved directives and the headlines of earlier
-runs, gathered from the people who read the report. It is a good fit when you
-have a trusted view, a small reviewing audience, and no formal context layer
-to lean on. Other [posit::conf(2026)](https://conf.posit.co/) talks cover that 
-larger problem, including more complex context management and managing data 
+data view. It is a good fit when you have a trusted view, a small reviewing audience, 
+and no formal context layerto lean on. Other [posit::conf(2026)](https://conf.posit.co/) 
+talks cover that larger problem, including more complex context management and managing data 
 agents at scale.
 
 A model writes a weekly funnel report for
@@ -17,9 +15,7 @@ A model writes a weekly funnel report for
 a fictitious B2B SaaS company, and Posit Connect emails it. Readers reply through two Shiny apps:
 a feedback app that turns a reviewer's correction into a standing directive the
 next report must follow, and a chat app that answers questions about the report
-from the same data, with the same rules, in a sandboxed R session. The three
-pieces never call each other. They coordinate through pins on the Connect
-server.
+from the same data, with the same rules, in a sandboxed R session.
 
 <p align="center">
   <img src="images/weekly-email.png" alt="The top of the weekly email: the ChickenCloud masthead, four counts for the reporting period, links to the chat and feedback apps, and the first headline with its chart and evidence table." width="560">
