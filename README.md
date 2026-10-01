@@ -6,7 +6,7 @@ The proof of concept behind the [posit::conf(2026)](https://conf.posit.co/) talk
 reporting using AI agents when you don't have access to a formal context management system. 
 The talk details a system designed to prevent AI analysis errors by providing the agent 
 with a context archive, including data dictionaries, business logic through prewritten 
-'house recipe' functions, and an MCP REPL for safe, unsupervised code execution. Included 
+'house recipe' functions, and the mcp-repl package for safe, unsupervised code execution. Included 
 is a walkthrough of the complete lifecycle: generating an automated report via R Markdown, 
 utilizing a feedback app to correct AI interpretations of data, and providing stakeholders 
 with a Shiny-based chat application for deeper investigation. The entire workflow is 
