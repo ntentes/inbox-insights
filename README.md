@@ -2,6 +2,17 @@
 
 The proof of concept behind the [posit::conf(2026)](https://conf.posit.co/) talk of the same name.
 
+**Talk Abstract:** A demonstration of how to build a reliable workflow for automated metric 
+reporting using AI agents when you don't have access to a formal context management system. 
+The talk details a system designed to prevent AI analysis errors by providing the agent 
+with a context archive, including data dictionaries, business logic through prewritten 
+'house recipe' functions, and an MCP REPL for safe, unsupervised code execution. Included 
+is a walkthrough of the complete lifecycle: generating an automated report via R Markdown, 
+utilizing a feedback app to correct AI interpretations of data, and providing stakeholders 
+with a Shiny-based chat application for deeper investigation. The entire workflow is 
+orchestrated and scheduled using Posit Connect to ensure consistent delivery of business-critical 
+insights.
+
 **When this fits:** There are many ways to give an agent context, and many
 tools now ship with formal context management built in. This project is not
 that. It shows one informal way to crowdsource a context archive for a trusted
